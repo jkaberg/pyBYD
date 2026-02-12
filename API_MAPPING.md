@@ -388,3 +388,161 @@ Realtime examples (not exhaustively maintained):
 |---|---|---|
 | `rate` | `-999` | possibly charging rate (unconfirmed) |
 | `lessOneMin` | `false` | possibly time-to-full flag (unconfirmed) |
+| `gl` | `double` | unknown (from AutoStatusChargeDataBean) |
+| `ins` | `int` | unknown (from AutoStatusChargeDataBean) |
+| `okLight` | `int` | OK light indicator (from AutoStatusChargeDataBean) |
+| `safeCharge` | `boolean` | safe charge flag (from AutoStatusChargeDataBean) |
+| `smartChargeState` | `int` | smart charge state (from AutoStatusChargeDataBean) |
+| `smartJourneyState` | `int` | smart journey state (from AutoStatusChargeDataBean) |
+| `brakingSystem` | `int` | braking system warning (from AutoStatusChargeDataBean) |
+| `chargingSystem` | `int` | charging system warning (from AutoStatusChargeDataBean) |
+| `steeringSystem` | `int` | steering system warning (from AutoStatusChargeDataBean) |
+| `oilPressureSystem` | `int` | oil pressure system warning (from AutoStatusChargeDataBean) |
+| `powerBatteryConnection` | `int` | power battery connection status (from AutoStatusChargeDataBean) |
+| `type` | `string` | data type identifier (from AutoStatusChargeDataBean) |
+| `totalConsumptionEn` | `string` | total consumption English text (from AutoStatusChargeDataBean) |
+
+---
+
+## Additional fields from decompiled classes
+
+The following fields were discovered by analyzing decompiled Java classes from the BYD app (`.docu/class-jadx/`).
+
+### AutoStatusChargeDataBean (Realtime additional fields)
+
+| API field | Type | Notes |
+|---|---|---|
+| `bookingDepartureHour` | `int` | scheduled departure hour |
+| `bookingDepartureMinute` | `int` | scheduled departure minute |
+| `bookingDepartureState` | `int` | scheduled departure state (0=off) |
+| `chargeStartTimeHour` | `int` | charge start time hour |
+| `chargeStartTimeMin` | `int` | charge start time minute |
+| `journeyStartTimeHour` | `int` | journey start time hour |
+| `journeyStartTimeMin` | `int` | journey start time minute |
+| `energyConsumption` | `string` | energy consumption value |
+| `copilotSettingTemp` | `int` | copilot setting temperature (also in realtime) |
+
+### AirStatusNow.StatusNowBean (HVAC additional fields)
+
+| API field | Type | Notes |
+|---|---|---|
+| `airTempLevel` | `int` | air temperature level |
+| `firstWarm` | `int` | first row heating |
+| `firstWind` | `int` | first row fan |
+| `secondWarm` | `int` | second row heating |
+| `secondWind` | `int` | second row fan |
+| `frontAirSumPattern` | `int` | front air sum pattern |
+| `temp` | `int` | temperature value |
+| `timeChoice` | `int` | time choice setting |
+
+### AirStatusNow.BookingInfoBean (HVAC booking fields)
+
+| API field | Type | Notes |
+|---|---|---|
+| `bookingId` | `long` | booking ID |
+| `bookingTime` | `int` | booking time |
+| `timeSpan` | `int` | time span duration |
+| `windLevel` | `int` | fan level |
+
+### ControlParamsMap (Remote control request fields)
+
+These are parameters used for climate/control requests:
+
+| Field | Type | Notes |
+|---|---|---|
+| `remoteMode` | `int` | remote mode |
+| `acSwitch` | `int` | A/C switch (0=off, 1=on) |
+| `mainSettingTemp` | `int` | main temperature setting |
+| `copilotSettingTemp` | `int` | copilot temperature setting |
+| `cycleMode` | `int` | air circulation mode |
+| `windLevel` | `int` | fan level |
+| `windMode` | `int` | fan mode |
+| `timeSpan` | `int` | duration in minutes |
+| `bookingId` | `long` | booking ID |
+| `bookingTime` | `long` | booking time |
+| `mainHeat` | `int` | main seat heating |
+| `mainVentilation` | `int` | main seat ventilation |
+| `copilotHeat` | `int` | copilot seat heating |
+| `copilotVentilation` | `int` | copilot seat ventilation |
+
+### SeatAndWheelControlParamsMap (Seat/wheel control fields)
+
+| Field | Type | Notes |
+|---|---|---|
+| `chairType` | `string` | chair type identifier |
+| `steeringWheelHeatState` | `int` | steering wheel heating |
+
+### BatteryControlParamsMap (Battery heat control)
+
+| Field | Type | Notes |
+|---|---|---|
+| `batteryHeat` | `int` | battery heat on/off (0/1) |
+
+### ReservationInfoResponse (Charging reservation fields)
+
+| API field | Type | Notes |
+|---|---|---|
+| `smartChargeDto` | `object` | smart charge configuration |
+| `smartChargeTips` | `string` | smart charge tips text |
+| `smartJourneyDto` | `object` | smart journey configuration |
+| `timeZone` | `string` | timezone string |
+| `vehicleTimeZone` | `string` | vehicle timezone |
+
+### ReservationCharge (Smart charge settings)
+
+| API field | Type | Default | Notes |
+|---|---|---|---|
+| `startChargeTime` | `string` | `"23:00"` | charge start time |
+| `endChargeTime` | `string` | `"full"` | charge end time or "full" |
+| `chargeWay` | `string` | `"0,1,2,6"` | charge days (comma-separated weekdays, 0=Mon?) |
+| `status` | `int` | `0` | status |
+
+### ReservationDeparture (Smart journey settings)
+
+| API field | Type | Default | Notes |
+|---|---|---|---|
+| `useVehicleTime` | `string` | `"08:00"` | departure time |
+| `chargeWay` | `string` | `"0"` | charge days |
+| `startDiscountPrice` | `string` | | start discount price time |
+| `endDiscountPrice` | `string` | `"07:00"` | end discount price time |
+| `batteryHeatStatus` | `int` | `0` | battery heating for departure |
+| `airStats` | `int` | `0` | A/C for departure |
+
+### RemoteControlResultResponse (Control result fields)
+
+| API field | Type | Notes |
+|---|---|---|
+| `res` | `int` | result code (2=success observed) |
+| `message` | `string` | result message |
+
+### VehicleLocationInfo (GPS additional)
+
+| API field | Type | Notes |
+|---|---|---|
+| `gpsTimeStamp` | `string` | GPS timestamp as string |
+
+---
+
+## App routing paths (from RouterURLS.java)
+
+Internal app paths that may indicate feature availability:
+
+| Path | Feature |
+|---|---|
+| `/car/airConditioner` | A/C control |
+| `/car/AirBootReservation` | A/C boot reservation |
+| `/car/AirMoreSetting` | A/C more settings |
+| `/car/DoorAndWindowStatus` | Door and window status |
+| `/car/SeatStatus2` | Seat status |
+| `/car/TirePressureStatus` | Tire pressure status |
+| `/car/BatteryHeating` | Battery heating |
+| `/car/BatteryPreheatHelp` | Battery preheat help |
+| `/nfc/digitalKey` | Digital key |
+| `/nfc/detail` | NFC detail |
+| `/nfc/all/keys` | All NFC keys |
+| `/nfc/activate` | NFC activate |
+| `/reservation/Reservation` | Reservations |
+| `/reservation/editing` | Edit reservation |
+| `/reservation/editing/departure` | Edit departure |
+| `/reservation/editing/low` | Edit low-price charging |
+| `/widget/setting` | Widget settings |
