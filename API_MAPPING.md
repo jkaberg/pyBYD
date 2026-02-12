@@ -83,7 +83,10 @@ Parser: `src/pybyd/_api/realtime.py`
 | Climate | `tempInCar` | `temp_in_car` | `float | None` | interior temp in C; -129 means unavailable (confirmed) |
 | Climate | `mainSettingTemp` | `main_setting_temp` | `int | None` | cabin set temperature, integer (confirmed) |
 | Climate | `mainSettingTempNew` | `main_setting_temp_new` | `float | None` | cabin set temperature, precise C (unconfirmed) |
-| Climate | `airRunState` | `air_run_state` | `AirCirculationMode | None` | 0=external (confirmed), 1=internal recirculation (confirmed) |
+| Climate | `airRunState` | `air_run_state` | `AirCirculationMode` | 0=external (confirmed), 1=internal recirculation (confirmed) |
+| Climate | `copilotSettingTemp` | - | `int` | copilot setting temperature (from decompiled) |
+| Climate | `journeyStartTimeHour` | - | `int` | journey start time hour (from decompiled) |
+| Climate | `journeyStartTimeMin` | - | `int` | journey start time minute (from decompiled) |
 | Seats | `mainSeatHeatState` | `main_seat_heat_state` | `SeatHeatVentState | int | None` | 0=off, 2=low, 3=high (confirmed); value 1 observed and kept as raw int |
 | Seats | `mainSeatVentilationState` | `main_seat_ventilation_state` | `SeatHeatVentState | int | None` | 0=off, 2=low, 3=high (confirmed) |
 | Seats | `copilotSeatHeatState` | `copilot_seat_heat_state` | `SeatHeatVentState | int | None` | 0=off, 2=low, 3=high (confirmed) |
@@ -103,6 +106,14 @@ Parser: `src/pybyd/_api/realtime.py`
 | Charging | `bookingChargeState` | `booking_charge_state` | `int | None` | scheduled charging state; 0=off (confirmed) |
 | Charging | `bookingChargingHour` | `booking_charging_hour` | `int | None` | scheduled charge start hour (unconfirmed) |
 | Charging | `bookingChargingMinute` | `booking_charging_minute` | `int | None` | scheduled charge start minute (unconfirmed) |
+| Charging | `bookingDepartureHour` | - | `int` | scheduled departure hour (from decompiled) |
+| Charging | `bookingDepartureMinute` | - | `int` | scheduled departure minute (from decompiled) |
+| Charging | `bookingDepartureState` | - | `int` | scheduled departure state 0=off (from decompiled) |
+| Charging | `chargeStartTimeHour` | - | `int` | charge start time hour (from decompiled) |
+| Charging | `chargeStartTimeMin` | - | `int` | charge start time minute (from decompiled) |
+| Charging | `smartChargeState` | - | `int` | smart charge state (from decompiled) |
+| Charging | `smartJourneyState` | - | `int` | smart journey state (from decompiled) |
+| Charging | `safeCharge` | - | `bool` | safe charge flag (from decompiled) |
 | Doors | `leftFrontDoor` | `left_front_door` | `DoorOpenState | None` | 0=closed (confirmed), 1=open (unconfirmed) |
 | Doors | `rightFrontDoor` | `right_front_door` | `DoorOpenState | None` | 0=closed (confirmed), 1=open (unconfirmed) |
 | Doors | `leftRearDoor` | `left_rear_door` | `DoorOpenState | None` | 0=closed (confirmed), 1=open (unconfirmed) |
@@ -149,7 +160,13 @@ Parser: `src/pybyd/_api/realtime.py`
 | Warnings | `srs` | `srs` | `int | None` | 0=normal (confirmed) |
 | Warnings | `ect` | `ect` | `int | None` | 0=normal (confirmed) |
 | Warnings | `ectValue` | `ect_value` | `int | None` | -1 means not available (confirmed) |
-| Warnings | `pwr` | `pwr` | `int | None` | 2 observed (unconfirmed) |
+| Warnings | `pwr` | `pwr` | `int` | 2 observed (unconfirmed) |
+| Warnings | `brakingSystem` | - | `int` | braking system warning (from decompiled) |
+| Warnings | `chargingSystem` | - | `int` | charging system warning (from decompiled) |
+| Warnings | `steeringSystem` | - | `int` | steering system warning (from decompiled) |
+| Warnings | `oilPressureSystem` | - | `int` | oil pressure system warning (from decompiled) |
+| Warnings | `powerBatteryConnection` | - | `int` | power battery connection status (from decompiled) |
+| Warnings | `okLight` | - | `int` | OK light indicator (from decompiled) |
 | Features | `sentryStatus` | `sentry_status` | `int | None` | 0=off (unconfirmed), 1=on (unconfirmed), 2 observed (unconfirmed) |
 | Features | `batteryHeatState` | `battery_heat_state` | `int | None` | 0=off (confirmed) |
 | Features | `chargeHeatState` | `charge_heat_state` | `int | None` | 0=off (confirmed) |
@@ -200,7 +217,24 @@ Response wraps data under the `statusNow` key.
 | `refrigeratorState` | `refrigerator_state` | `int | None` | 0=off (confirmed) |
 | `refrigeratorDoorState` | `refrigerator_door_state` | `int | None` | 0=closed (confirmed) |
 | `pm` | `pm` | `int | None` | PM2.5 value (unconfirmed) |
-| `pm25StateOutCar` | `pm25_state_out_car` | `int | None` | outside PM2.5 state (unconfirmed) |
+| `pm25StateOutCar` | `pm25_state_out_car` | `int` | outside PM2.5 state (unconfirmed) |
+| `airTempLevel` | - | `int` | air temperature level (from decompiled) |
+| `firstWarm` | - | `int` | first row heating (from decompiled) |
+| `firstWind` | - | `int` | first row fan (from decompiled) |
+| `secondWarm` | - | `int` | second row heating (from decompiled) |
+| `secondWind` | - | `int` | second row fan (from decompiled) |
+| `frontAirSumPattern` | - | `int` | front air sum pattern (from decompiled) |
+| `temp` | - | `int` | temperature value (from decompiled) |
+| `timeChoice` | - | `int` | time choice setting (from decompiled) |
+
+HVAC booking info (nested under `bookingInfo`):
+
+| API field | Python field | Type | Values / notes |
+|---|---|---|---|
+| `bookingId` | - | `long` | booking ID (from decompiled) |
+| `bookingTime` | - | `int` | booking time (from decompiled) |
+| `timeSpan` | - | `int` | time span duration (from decompiled) |
+| `windLevel` | - | `int` | fan level (from decompiled) |
 
 ---
 
@@ -221,7 +255,33 @@ Parser: `src/pybyd/_api/charging.py`
 | `waitStatus` | `wait_status` | `int | None` | 0 (confirmed) |
 | `fullHour` | `full_hour` | `int | None` | -1 means not available (confirmed) |
 | `fullMinute` | `full_minute` | `int | None` | -1 means not available (confirmed) |
-| `updateTime` | `update_time` | `int | None` | epoch seconds (confirmed) |
+| `updateTime` | `update_time` | `int` | epoch seconds (confirmed) |
+| `batteryHeatState` | - | `int` | battery heat state (from decompiled) |
+| `timeZone` | - | `string` | timezone string (from decompiled) |
+| `vehicleTimeZone` | - | `string` | vehicle timezone (from decompiled) |
+| `smartChargeDto` | - | `object` | smart charge configuration (from decompiled) |
+| `smartChargeTips` | - | `string` | smart charge tips text (from decompiled) |
+| `smartJourneyDto` | - | `object` | smart journey configuration (from decompiled) |
+
+Smart charge settings (`smartChargeDto`):
+
+| API field | Type | Default | Notes |
+|---|---|---|---|
+| `startChargeTime` | `string` | `"23:00"` | charge start time |
+| `endChargeTime` | `string` | `"full"` | charge end time or "full" |
+| `chargeWay` | `string` | `"0,1,2,6"` | charge days (comma-separated weekdays) |
+| `status` | `int` | `0` | status |
+
+Smart journey settings (`smartJourneyDto`):
+
+| API field | Type | Default | Notes |
+|---|---|---|---|
+| `useVehicleTime` | `string` | `"08:00"` | departure time |
+| `chargeWay` | `string` | `"0"` | charge days |
+| `startDiscountPrice` | `string` | | start discount price time |
+| `endDiscountPrice` | `string` | `"07:00"` | end discount price time |
+| `batteryHeatStatus` | `int` | `0` | battery heating for departure |
+| `airStats` | `int` | `0` | A/C for departure |
 
 ---
 
@@ -332,8 +392,30 @@ Parser: `src/pybyd/_api/control.py`
 | API field | Python field | Type | Values / notes |
 |---|---|---|---|
 | `controlState` | `control_state` | `ControlState` | 0=pending, 1=success, 2=failure (unconfirmed). If `res` is present instead, pyBYD maps `res==2` to success. |
-| `requestSerial` | `request_serial` | `str | None` | poll serial token (unconfirmed) |
+| `requestSerial` | `request_serial` | `str` | poll serial token (unconfirmed) |
 | `res` | (immediate) | `int` | 2 observed as success (unconfirmed) |
+| `message` | - | `string` | result message (from decompiled) |
+
+Control request parameters (for climate commands):
+
+| Field | Type | Notes |
+|---|---|---|
+| `remoteMode` | `int` | remote mode |
+| `acSwitch` | `int` | A/C switch (0=off, 1=on) |
+| `mainSettingTemp` | `int` | main temperature setting |
+| `copilotSettingTemp` | `int` | copilot temperature setting |
+| `cycleMode` | `int` | air circulation mode |
+| `windLevel` | `int` | fan level |
+| `windMode` | `int` | fan mode |
+| `timeSpan` | `int` | duration in minutes |
+| `bookingId` | `long` | booking ID |
+| `bookingTime` | `long` | booking time |
+| `mainHeat` | `int` | main seat heating |
+| `mainVentilation` | `int` | main seat ventilation |
+| `copilotHeat` | `int` | copilot seat heating |
+| `copilotVentilation` | `int` | copilot seat ventilation |
+| `chairType` | `string` | chair type identifier |
+| `batteryHeat` | `int` | battery heat on/off (0/1) |
 
 ---
 
@@ -388,161 +470,8 @@ Realtime examples (not exhaustively maintained):
 |---|---|---|
 | `rate` | `-999` | possibly charging rate (unconfirmed) |
 | `lessOneMin` | `false` | possibly time-to-full flag (unconfirmed) |
-| `gl` | `double` | unknown (from AutoStatusChargeDataBean) |
-| `ins` | `int` | unknown (from AutoStatusChargeDataBean) |
-| `okLight` | `int` | OK light indicator (from AutoStatusChargeDataBean) |
-| `safeCharge` | `boolean` | safe charge flag (from AutoStatusChargeDataBean) |
-| `smartChargeState` | `int` | smart charge state (from AutoStatusChargeDataBean) |
-| `smartJourneyState` | `int` | smart journey state (from AutoStatusChargeDataBean) |
-| `brakingSystem` | `int` | braking system warning (from AutoStatusChargeDataBean) |
-| `chargingSystem` | `int` | charging system warning (from AutoStatusChargeDataBean) |
-| `steeringSystem` | `int` | steering system warning (from AutoStatusChargeDataBean) |
-| `oilPressureSystem` | `int` | oil pressure system warning (from AutoStatusChargeDataBean) |
-| `powerBatteryConnection` | `int` | power battery connection status (from AutoStatusChargeDataBean) |
-| `type` | `string` | data type identifier (from AutoStatusChargeDataBean) |
-| `totalConsumptionEn` | `string` | total consumption English text (from AutoStatusChargeDataBean) |
-
----
-
-## Additional fields from decompiled classes
-
-The following fields were discovered by analyzing decompiled Java classes from the BYD app (`.docu/class-jadx/`).
-
-### AutoStatusChargeDataBean (Realtime additional fields)
-
-| API field | Type | Notes |
-|---|---|---|
-| `bookingDepartureHour` | `int` | scheduled departure hour |
-| `bookingDepartureMinute` | `int` | scheduled departure minute |
-| `bookingDepartureState` | `int` | scheduled departure state (0=off) |
-| `chargeStartTimeHour` | `int` | charge start time hour |
-| `chargeStartTimeMin` | `int` | charge start time minute |
-| `journeyStartTimeHour` | `int` | journey start time hour |
-| `journeyStartTimeMin` | `int` | journey start time minute |
+| `gl` | `double` | unknown |
+| `ins` | `int` | unknown |
+| `type` | `string` | data type identifier |
+| `totalConsumptionEn` | `string` | total consumption English text |
 | `energyConsumption` | `string` | energy consumption value |
-| `copilotSettingTemp` | `int` | copilot setting temperature (also in realtime) |
-
-### AirStatusNow.StatusNowBean (HVAC additional fields)
-
-| API field | Type | Notes |
-|---|---|---|
-| `airTempLevel` | `int` | air temperature level |
-| `firstWarm` | `int` | first row heating |
-| `firstWind` | `int` | first row fan |
-| `secondWarm` | `int` | second row heating |
-| `secondWind` | `int` | second row fan |
-| `frontAirSumPattern` | `int` | front air sum pattern |
-| `temp` | `int` | temperature value |
-| `timeChoice` | `int` | time choice setting |
-
-### AirStatusNow.BookingInfoBean (HVAC booking fields)
-
-| API field | Type | Notes |
-|---|---|---|
-| `bookingId` | `long` | booking ID |
-| `bookingTime` | `int` | booking time |
-| `timeSpan` | `int` | time span duration |
-| `windLevel` | `int` | fan level |
-
-### ControlParamsMap (Remote control request fields)
-
-These are parameters used for climate/control requests:
-
-| Field | Type | Notes |
-|---|---|---|
-| `remoteMode` | `int` | remote mode |
-| `acSwitch` | `int` | A/C switch (0=off, 1=on) |
-| `mainSettingTemp` | `int` | main temperature setting |
-| `copilotSettingTemp` | `int` | copilot temperature setting |
-| `cycleMode` | `int` | air circulation mode |
-| `windLevel` | `int` | fan level |
-| `windMode` | `int` | fan mode |
-| `timeSpan` | `int` | duration in minutes |
-| `bookingId` | `long` | booking ID |
-| `bookingTime` | `long` | booking time |
-| `mainHeat` | `int` | main seat heating |
-| `mainVentilation` | `int` | main seat ventilation |
-| `copilotHeat` | `int` | copilot seat heating |
-| `copilotVentilation` | `int` | copilot seat ventilation |
-
-### SeatAndWheelControlParamsMap (Seat/wheel control fields)
-
-| Field | Type | Notes |
-|---|---|---|
-| `chairType` | `string` | chair type identifier |
-| `steeringWheelHeatState` | `int` | steering wheel heating |
-
-### BatteryControlParamsMap (Battery heat control)
-
-| Field | Type | Notes |
-|---|---|---|
-| `batteryHeat` | `int` | battery heat on/off (0/1) |
-
-### ReservationInfoResponse (Charging reservation fields)
-
-| API field | Type | Notes |
-|---|---|---|
-| `smartChargeDto` | `object` | smart charge configuration |
-| `smartChargeTips` | `string` | smart charge tips text |
-| `smartJourneyDto` | `object` | smart journey configuration |
-| `timeZone` | `string` | timezone string |
-| `vehicleTimeZone` | `string` | vehicle timezone |
-
-### ReservationCharge (Smart charge settings)
-
-| API field | Type | Default | Notes |
-|---|---|---|---|
-| `startChargeTime` | `string` | `"23:00"` | charge start time |
-| `endChargeTime` | `string` | `"full"` | charge end time or "full" |
-| `chargeWay` | `string` | `"0,1,2,6"` | charge days (comma-separated weekdays, 0=Mon?) |
-| `status` | `int` | `0` | status |
-
-### ReservationDeparture (Smart journey settings)
-
-| API field | Type | Default | Notes |
-|---|---|---|---|
-| `useVehicleTime` | `string` | `"08:00"` | departure time |
-| `chargeWay` | `string` | `"0"` | charge days |
-| `startDiscountPrice` | `string` | | start discount price time |
-| `endDiscountPrice` | `string` | `"07:00"` | end discount price time |
-| `batteryHeatStatus` | `int` | `0` | battery heating for departure |
-| `airStats` | `int` | `0` | A/C for departure |
-
-### RemoteControlResultResponse (Control result fields)
-
-| API field | Type | Notes |
-|---|---|---|
-| `res` | `int` | result code (2=success observed) |
-| `message` | `string` | result message |
-
-### VehicleLocationInfo (GPS additional)
-
-| API field | Type | Notes |
-|---|---|---|
-| `gpsTimeStamp` | `string` | GPS timestamp as string |
-
----
-
-## App routing paths (from RouterURLS.java)
-
-Internal app paths that may indicate feature availability:
-
-| Path | Feature |
-|---|---|
-| `/car/airConditioner` | A/C control |
-| `/car/AirBootReservation` | A/C boot reservation |
-| `/car/AirMoreSetting` | A/C more settings |
-| `/car/DoorAndWindowStatus` | Door and window status |
-| `/car/SeatStatus2` | Seat status |
-| `/car/TirePressureStatus` | Tire pressure status |
-| `/car/BatteryHeating` | Battery heating |
-| `/car/BatteryPreheatHelp` | Battery preheat help |
-| `/nfc/digitalKey` | Digital key |
-| `/nfc/detail` | NFC detail |
-| `/nfc/all/keys` | All NFC keys |
-| `/nfc/activate` | NFC activate |
-| `/reservation/Reservation` | Reservations |
-| `/reservation/editing` | Edit reservation |
-| `/reservation/editing/departure` | Edit departure |
-| `/reservation/editing/low` | Edit low-price charging |
-| `/widget/setting` | Widget settings |
