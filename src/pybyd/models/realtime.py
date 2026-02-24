@@ -123,16 +123,18 @@ class PowerGear(BydEnum):
 
 
 class StearingWheelHeat(BydEnum):
-    """Stearing wheel heating level.
+    """Steering wheel heating state.
 
-    Observed from live API data:
-    - 0 = off
-    - 1 = on
-
+    Currently mapped as binary on/off (0/1).  Some BYD models support
+    multiple heating levels (like seats: off/low/high) which would
+    follow the ``SeatHeatVentState`` scale (0=no_data, 1=off, 2=low,
+    3=high).  If real-vehicle testing reveals level values > 1, this
+    enum should be expanded or replaced with ``SeatHeatVentState``.
     """
 
-    ON = -1  # makes no sense, but tested live.
-    OFF = 1
+    UNKNOWN = -1
+    OFF = 0
+    ON = 1
 
 
 class SeatHeatVentState(BydEnum):
@@ -256,28 +258,28 @@ class VehicleRealtimeData(BydBaseModel):
     main_setting_temp_new: float | None = None
     """Driver-side set temperature (°C, precise)."""
     air_run_state: AirCirculationMode | None = None
-    """Air circulation mode (0=unavailable, 1=internal, 2=external).
-    BYD SDK ``getAcCycleMode()`` (section 6.6.8): INLOOP / OUTLOOP."""
+    """Air circulation mode (0=unavailable, 1=external, 2=internal).
+    BYD SDK ``getAcCycleMode()`` (section 6.6.8): OUTLOOP=1, INLOOP=2."""
 
     # --- Seat heating/ventilation ---
     main_seat_heat_state: SeatHeatVentState | None = None
-    """Driver seat heating level (0=off, 2=low, 3=high)."""
+    """Driver seat heating level (0=no_data, 1=off, 2=low, 3=high)."""
     main_seat_ventilation_state: SeatHeatVentState | None = None
-    """Driver seat ventilation level (0=off, 2=low, 3=high)."""
+    """Driver seat ventilation level (0=no_data, 1=off, 2=low, 3=high)."""
     copilot_seat_heat_state: SeatHeatVentState | None = None
-    """Passenger seat heating level (0=off, 2=low, 3=high)."""
+    """Passenger seat heating level (0=no_data, 1=off, 2=low, 3=high)."""
     copilot_seat_ventilation_state: SeatHeatVentState | None = None
-    """Passenger seat ventilation level (0=off, 2=low, 3=high)."""
+    """Passenger seat ventilation level (0=no_data, 1=off, 2=low, 3=high)."""
     steering_wheel_heat_state: StearingWheelHeat | None = None
-    """Steering wheel heating state (0=off, 2=low, 3=high)."""
+    """Steering wheel heating state (0=off, 1=on)."""
     lr_seat_heat_state: SeatHeatVentState | None = None
-    """Left rear seat heating level (0=off, 2=low, 3=high)."""
+    """Left rear seat heating level (0=no_data, 1=off, 2=low, 3=high)."""
     lr_seat_ventilation_state: SeatHeatVentState | None = None
-    """Left rear seat ventilation level (0=off, 2=low, 3=high)."""
+    """Left rear seat ventilation level (0=no_data, 1=off, 2=low, 3=high)."""
     rr_seat_heat_state: SeatHeatVentState | None = None
-    """Right rear seat heating level (0=off, 2=low, 3=high)."""
+    """Right rear seat heating level (0=no_data, 1=off, 2=low, 3=high)."""
     rr_seat_ventilation_state: SeatHeatVentState | None = None
-    """Right rear seat ventilation level (0=off, 2=low, 3=high)."""
+    """Right rear seat ventilation level (0=no_data, 1=off, 2=low, 3=high)."""
 
     # --- Charging ---
     charging_state: ChargingState = ChargingState.UNKNOWN

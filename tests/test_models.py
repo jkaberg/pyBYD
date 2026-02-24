@@ -39,7 +39,7 @@ class TestBydEnum:
         assert PowerGear(99) == PowerGear.UNKNOWN
 
     def test_known_value(self) -> None:
-        assert PowerGear(3) == PowerGear.DRIVE
+        assert PowerGear(3) == PowerGear.ON
 
     def test_all_enums_have_unknown(self) -> None:
         for cls in (
@@ -145,8 +145,8 @@ class TestVehicleRealtimeData:
 
     def test_enum_fields(self) -> None:
         data = VehicleRealtimeData.model_validate(self.SAMPLE_PAYLOAD)
-        assert data.power_gear == PowerGear.DRIVE
-        assert data.air_run_state == AirCirculationMode.INTERNAL
+        assert data.power_gear == PowerGear.ON
+        assert data.air_run_state == AirCirculationMode.EXTERNAL
         assert data.main_seat_heat_state == SeatHeatVentState.HIGH
         assert data.charging_state == ChargingState.UNKNOWN
         assert data.charge_state == ChargingState.CONNECTED
@@ -509,11 +509,11 @@ class TestTimeToFullMinutes:
 
 class TestConvenienceProperties:
     def test_is_vehicle_on_true(self) -> None:
-        data = VehicleRealtimeData.model_validate({"vehicleState": 0})
+        data = VehicleRealtimeData.model_validate({"powerGear": 3})
         assert data.is_vehicle_on is True
 
     def test_is_vehicle_on_false(self) -> None:
-        data = VehicleRealtimeData.model_validate({"vehicleState": 2})
+        data = VehicleRealtimeData.model_validate({"powerGear": 1})
         assert data.is_vehicle_on is False
 
     def test_is_vehicle_on_unknown(self) -> None:

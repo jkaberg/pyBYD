@@ -11,7 +11,7 @@ from typing import Any, ClassVar
 from pydantic import model_validator
 
 from pybyd._constants import celsius_to_scale
-from pybyd.models._base import COMMON_KEY_ALIASES, BydBaseModel, BydEnum, is_temp_sentinel
+from pybyd.models._base import COMMON_KEY_ALIASES, BydBaseModel, BydEnum, is_negative, is_temp_sentinel
 from pybyd.models.realtime import AirCirculationMode, SeatHeatVentState, StearingWheelHeat
 
 __all__ = [
@@ -26,18 +26,28 @@ __all__ = [
 
 
 class AcSwitch(BydEnum):
-    """AcSwitch on/off state."""
+    """AcSwitch on/off state.
 
-    # we currently do not know what this is. its not related to the if its on/off it seems, see HvacOverallStatus.
+    Observed 0=off, 1=on in live API data, but the exact semantics
+    are not fully confirmed.  ``is_ac_on`` prefers this field when
+    present and falls back to :class:`HvacOverallStatus` (``status``)
+    which is more reliably observed.
+    """
+
     UNKNOWN = -1
+    OFF = 0
+    ON = 1
 
 
 class HvacOverallStatus(BydEnum):
-    """Overall HVAC status."""
+    """Overall HVAC status.
+
+    Observed from live API data: ``2`` while A/C active.
+    """
 
     UNKNOWN = -1
-    ON = 1
-    OFF = 2
+    OFF = 1
+    ON = 2
 
 
 class AirConditioningMode(BydEnum):
@@ -84,6 +94,7 @@ class HvacStatus(BydBaseModel):
 
     _SENTINEL_RULES: ClassVar[dict[str, Callable[..., bool]]] = {
         "temp_in_car": is_temp_sentinel,
+        "refrigerator_temp": is_negative,
     }
 
     # --- A/C state ---
@@ -155,11 +166,19 @@ class HvacStatus(BydBaseModel):
 
     @property
     def is_ac_on(self) -> bool:
-        """Whether the A/C is currently on."""
+        """Whether the A/C is currently on.
+
+        Prefers ``ac_switch`` when present; falls back to ``status``.
+        An explicit switch-off wins over a stale/lagging overall status.
+        """
+        if self.ac_switch is not None:
+            try:
+                return int(self.ac_switch) == int(AcSwitch.ON)
+            except (TypeError, ValueError):
+                pass
         if self.status is None:
             return False
         try:
-            # this might be wrong in the long run, but ac_switch is not reliable.
             return int(self.status) == int(HvacOverallStatus.ON)
         except (TypeError, ValueError):
             return False
@@ -171,14 +190,20 @@ class HvacStatus(BydBaseModel):
         This is a more permissive signal than :pyattr:`is_ac_on` and is
         intended for consumers that want a best-effort "climate running"
         indicator even when the explicit switch field is missing or
-        temporarily inconsistent.
+        temporarily inconsistent.  Returns ``True`` when *either*
+        ``ac_switch`` is on **or** ``status`` indicates activity.
         """
-        if self.status is None:
-            return False
         try:
-            return int(self.status) == int(HvacOverallStatus.ON)
+            if self.status is not None and int(self.status) == int(HvacOverallStatus.ON):
+                return True
         except (TypeError, ValueError):
-            return False
+            pass
+        try:
+            if self.ac_switch is not None and int(self.ac_switch) == int(AcSwitch.ON):
+                return True
+        except (TypeError, ValueError):
+            pass
+        return False
 
     @property
     def interior_temp_available(self) -> bool:
