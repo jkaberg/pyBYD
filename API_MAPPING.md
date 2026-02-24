@@ -348,6 +348,13 @@ Response wraps data under the `statusNow` key.
 | `rapidDecreaseTempState` | `rapid_decrease_temp_state` | `int \| None` | 0=off (confirmed) |
 | `refrigeratorState` | `refrigerator_state` | `int \| None` | 0=off (confirmed) |
 | `refrigeratorDoorState` | `refrigerator_door_state` | `int \| None` | 0=closed (confirmed); `-1` also observed (likely unsupported on some vehicles) |
+| `refrigeratorTemp` | `refrigerator_temp` | `float \| None` | refrigerator temperature; `-1` when unsupported (unconfirmed) |
+| `lrThirdHeatState` | `lr_third_heat_state` | `SeatHeatVentState \| None` | third-row left seat heat (unconfirmed) |
+| `lrThirdVentilationState` | `lr_third_ventilation_state` | `SeatHeatVentState \| None` | third-row left seat ventilation (unconfirmed) |
+| `rrThirdHeatState` | `rr_third_heat_state` | `SeatHeatVentState \| None` | third-row right seat heat (unconfirmed) |
+| `rrThirdVentilationState` | `rr_third_ventilation_state` | `SeatHeatVentState \| None` | third-row right seat ventilation (unconfirmed) |
+| `airTempLevel` | `air_temp_level` | `int \| None` | air temperature level code (unconfirmed) |
+| `airConditionTempRange` | `air_condition_temp_range` | `int \| None` | A/C temperature range setting (unconfirmed) |
 | `pm` | `pm` | `float \| None` | PM2.5 value; `0` observed (confirmed) |
 | `pm25StateOutCar` | `pm25_state_out_car` | `float \| None` | outside PM2.5 state; `0` observed (confirmed) |
 
@@ -358,13 +365,6 @@ They are accessible via the `raw` dict.
 
 | API field | Observed value | Notes |
 |---|---|---|
-| `lrThirdHeatState` | `0` | third-row left seat heat (unconfirmed) |
-| `lrThirdVentilationState` | `0` | third-row left seat ventilation (unconfirmed) |
-| `rrThirdHeatState` | `0` | third-row right seat heat (unconfirmed) |
-| `rrThirdVentilationState` | `0` | third-row right seat ventilation (unconfirmed) |
-| `refrigeratorTemp` | `"-1"` | refrigerator temperature (unconfirmed) |
-| `airTempLevel` | `0` | air temperature level code (unconfirmed) |
-| `airConditionTempRange` | `0` | A/C temperature range setting (unconfirmed) |
 | `frontAirSumPattern` | `0` | front air distribution pattern (unconfirmed) |
 | `temp` | `0` | unknown temperature field (unconfirmed) |
 | `firstWind` | `0` | fan speed level 1 (unconfirmed) |

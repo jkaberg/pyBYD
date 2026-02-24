@@ -152,9 +152,28 @@ class HvacStatus(BydBaseModel):
     rapid_increase_temp_state: int | None = None
     rapid_decrease_temp_state: int | None = None
 
+    # --- Third-row seat heating / ventilation (3-row vehicles only) ---
+    lr_third_heat_state: SeatHeatVentState | None = None
+    """Third-row left seat heating level (unconfirmed)."""
+    lr_third_ventilation_state: SeatHeatVentState | None = None
+    """Third-row left seat ventilation level (unconfirmed)."""
+    rr_third_heat_state: SeatHeatVentState | None = None
+    """Third-row right seat heating level (unconfirmed)."""
+    rr_third_ventilation_state: SeatHeatVentState | None = None
+    """Third-row right seat ventilation level (unconfirmed)."""
+
     # --- Refrigerator ---
     refrigerator_state: int | None = None
     refrigerator_door_state: int | None = None
+    refrigerator_temp: float | None = None
+    """Refrigerator temperature (°C).  Negative values (e.g. ``-1``)
+    are stripped to ``None`` by sentinel rules (unsupported/unavailable)."""
+
+    # --- Extended climate fields ---
+    air_temp_level: int | None = None
+    """Air temperature level code (unconfirmed)."""
+    air_condition_temp_range: int | None = None
+    """A/C temperature range setting (unconfirmed)."""
 
     # --- Air quality ---
     pm: float | None = None
