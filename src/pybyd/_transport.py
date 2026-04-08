@@ -1,4 +1,4 @@
-"""HTTP transport with Bangcle envelope wrapping."""
+"""HTTP transport with Bangcle or WBSK envelope wrapping."""
 
 from __future__ import annotations
 
@@ -10,11 +10,20 @@ from typing import Any, Protocol
 import aiohttp
 
 from pybyd._constants import USER_AGENT
-from pybyd._crypto.bangcle import BangcleCodec
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydTransportError
 
 _logger = logging.getLogger(__name__)
+
+
+class EnvelopeCodec(Protocol):
+    """Encode/decode outer JSON string for the wire format (Bangcle or WBSK)."""
+
+    async def async_load_tables(self) -> None: ...
+
+    def encode_envelope(self, plaintext: str | bytes) -> str: ...
+
+    def decode_envelope(self, envelope: str) -> bytes: ...
 
 
 class Transport(Protocol):
@@ -28,7 +37,7 @@ class Transport(Protocol):
 
 
 class SecureTransport:
-    """HTTP transport that handles Bangcle envelope encoding.
+    """HTTP transport that handles Bangcle or WBSK envelope encoding.
 
     Cookie persistence is delegated to the ``aiohttp.ClientSession``'s
     built-in ``CookieJar`` — callers should create the session with
@@ -38,7 +47,7 @@ class SecureTransport:
     def __init__(
         self,
         config: BydConfig,
-        codec: BangcleCodec,
+        codec: EnvelopeCodec,
         http_session: aiohttp.ClientSession,
         *,
         logger: logging.Logger | None = None,
@@ -49,21 +58,25 @@ class SecureTransport:
         self._logger = logger or _logger
 
     async def post_secure(self, endpoint: str, outer_payload: Mapping[str, Any]) -> dict[str, Any]:
-        """Send a signed request through the Bangcle envelope layer.
+        """Send a signed request through the envelope layer.
 
         1. JSON-encode the outer payload
-        2. Bangcle-encode it
+        2. Codec-encode it (Bangcle ``F``+base64 or WBSK base64)
         3. POST as ``{"request": "<encoded>"}``
-        4. Bangcle-decode the ``{"response": "<encoded>"}`` reply
+        4. Decode the ``{"response": "<encoded>"}`` reply
         5. Return the decoded JSON dict
         """
-        encoded = self._codec.encode_envelope(json.dumps(outer_payload, separators=(",", ":")))
+        encoded = self._codec.encode_envelope(json.dumps(outer_payload, separators=(",", ":"), ensure_ascii=False))
 
         headers: dict[str, str] = {
             "accept-encoding": "identity",
             "content-type": "application/json; charset=UTF-8",
             "user-agent": USER_AGENT,
         }
+        if self._config.is_china_region:
+            headers["version"] = self._config.cn_app_inner_version
+            headers["platform"] = "ANDROID"
+            headers["BrandFlag"] = self._config.brand_flag
 
         url = f"{self._config.base_url}{endpoint}"
         body = json.dumps({"request": encoded})
@@ -110,7 +123,7 @@ class SecureTransport:
 
         decoded_text = self._codec.decode_envelope(response_str).decode("utf-8").strip()
 
-        # Handle stray F prefix on decoded JSON (observed in some responses)
+        # Handle stray F prefix on decoded JSON (observed in some Bangcle responses)
         if decoded_text.startswith("F{") or decoded_text.startswith("F["):
             decoded_text = decoded_text[1:]
 
@@ -118,7 +131,7 @@ class SecureTransport:
             result: dict[str, Any] = json.loads(decoded_text)
         except json.JSONDecodeError as exc:
             raise BydTransportError(
-                f"Bangcle response from {endpoint} is not JSON: {decoded_text[:64]}",
+                f"Envelope response from {endpoint} is not JSON: {decoded_text[:64]}",
                 endpoint=endpoint,
             ) from exc
 

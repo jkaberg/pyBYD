@@ -43,3 +43,14 @@ def compute_checkcode(payload: dict[str, Any]) -> str:
     json_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
     md5 = hashlib.md5(json_str.encode("utf-8")).hexdigest()
     return md5[24:32] + md5[8:16] + md5[16:24] + md5[0:8]
+
+
+def compute_cn_checkcode_json(json_str: str) -> str:
+    """China app outer payload checkcode: SHA-256 hex of the JSON string (no checkcode field yet)."""
+    return hashlib.sha256(json_str.encode("utf-8")).hexdigest()
+
+
+def compute_cn_checkcode_payload(payload: dict[str, Any]) -> str:
+    """SHA-256 checkcode from ``json.dumps`` of *payload* (must not include ``checkcode``)."""
+    json_str = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    return compute_cn_checkcode_json(json_str)

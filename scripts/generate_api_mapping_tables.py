@@ -13,6 +13,9 @@ Each table contains:
 - Raw current value
 - Parsed in pyBYD
 
+**Region:** Raw key sets differ between China (CN) and overseas backends. A snapshot taken with
+``BYD_BASE_URL`` pointing at a CN host is not directly comparable to one from an EU/overseas host.
+
 For enum-mapped fields, the parsed column includes:
 - current mapping (``raw -> Enum.Member``)
 - all enum possibilities (one per line via ``<br>``)
@@ -30,6 +33,15 @@ Options::
     --vin LNBX...       Target specific VIN (default: first account vehicle)
     --output FILE       Write markdown to FILE instead of stdout
     --skip-push         Skip push notification endpoint
+
+China (CN) example::
+
+    export BYD_BASE_URL="https://dilinksuperappserver-cn.byd.auto"
+    export BYD_USERNAME="13800138000"
+    export BYD_PASSWORD="your-password"
+    export BYD_CN_APP_INNER_VERSION="502"
+    export BYD_TARGET_BRAND="1"
+    python scripts/generate_api_mapping_tables.py --output api-mapping-cn.md
 """
 
 from __future__ import annotations
@@ -446,6 +458,7 @@ async def _generate_markdown(vin: str | None, *, include_push: bool) -> str:
     """Poll endpoints and return markdown report text."""
     config = BydConfig.from_env()
     now_iso = datetime.now(UTC).isoformat()
+    region = "cn" if config.is_china_region else "overseas"
     lines: list[str] = [
         "# pyBYD live API mapping snapshot",
         "",
@@ -454,6 +467,9 @@ async def _generate_markdown(vin: str | None, *, include_push: bool) -> str:
         "- Optional: `python scripts/generate_api_mapping_tables.py --vin YOUR_VIN --skip-push`",
         "",
         f"Generated: {now_iso}",
+        f"Region: {region}",
+        f"Base URL: {config.base_url}",
+        "",
     ]
 
     async with BydClient(config) as client:

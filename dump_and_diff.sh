@@ -1,4 +1,6 @@
 #!/bin/bash
+# Dumps use whatever BYD_* environment the shell exports (e.g. BYD_BASE_URL for CN vs overseas).
+# Running twice in one session without changing env compares two snapshots from the same backend.
 set -e
 
 file_name=$(date +dump-%Y_%m_%d-%H_%M_%S.json)

@@ -24,7 +24,10 @@ from pybyd._api import smart_charging as _smart_api
 from pybyd._api import vehicle as _vehicle_api
 from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
+from pybyd._api.login_cn import build_cn_login_request, parse_cn_login_response
 from pybyd._crypto.bangcle import BangcleCodec
+from pybyd._crypto.wbsk import WbskCodec
+from pybyd._transport import EnvelopeCodec
 from pybyd._crypto.hashing import md5_hex
 from pybyd._mqtt import BydMqttRuntime, MqttEvent, fetch_mqtt_bootstrap
 from pybyd._transport import SecureTransport
@@ -130,7 +133,7 @@ class BydClient:
         self._config = config
         self._external_session = session is not None
         self._http_session = session
-        self._codec = BangcleCodec()
+        self._codec: EnvelopeCodec = WbskCodec() if config.is_china_region else BangcleCodec()
         self._transport: SecureTransport | None = None
         self._session: Session | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -184,7 +187,7 @@ class BydClient:
             self._http_session,
             logger=_logger,
         )
-        await self._codec.async_load_tables()
+        await self._codec.async_load_tables()  # Bangcle loads .bin; WBSK loads JSON tables
 
     async def async_close(self) -> None:
         """Tear down the client transport and MQTT connection.
@@ -211,15 +214,25 @@ class BydClient:
     async def login(self) -> None:
         """Authenticate against the BYD API and obtain session tokens."""
         transport = self._require_transport()
-        outer = build_login_request(self._config, _now_ms())
-        response = await transport.post_secure("/app/account/login", outer)
-        token = parse_login_response(response, self._config.password)
+        if self._config.is_china_region:
+            outer = build_cn_login_request(self._config, _now_ms())
+            response = await transport.post_secure("/app/auth/login", outer)
+            token = parse_cn_login_response(
+                response,
+                self._config.password,
+                target_brand=self._config.target_brand,
+            )
+        else:
+            outer = build_login_request(self._config, _now_ms())
+            response = await transport.post_secure("/app/account/login", outer)
+            token = parse_login_response(response, self._config.password)
 
         ttl = self._config.session_ttl if self._config.session_ttl > 0 else float("inf")
         self._session = Session(
             user_id=token.user_id,
             sign_token=token.sign_token,
             encry_token=token.encry_token,
+            super_id=token.super_id,
             ttl=ttl,
         )
         # Update the running MQTT runtime's key immediately so any
@@ -1019,6 +1032,19 @@ class BydClient:
         """
 
         async def _call() -> GpsInfo:
+            if self._config.is_china_region:
+                session = await self.ensure_session()
+                transport = self._require_transport()
+                decoded, _serial = await _gps_api.fetch_gps_endpoint(
+                    "/vehicleInfo/gps/locationRequestService",
+                    self._config,
+                    session,
+                    transport,
+                    vin,
+                    None,
+                )
+                return GpsInfo.model_validate(decoded)
+
             return await self._trigger_and_poll(
                 vin=vin,
                 trigger_endpoint="/control/getGpsInfo",

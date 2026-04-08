@@ -19,7 +19,7 @@ from __future__ import annotations
 import enum
 import math
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Annotated, Any, ClassVar
 
 from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, model_validator
@@ -54,17 +54,95 @@ COMMON_KEY_ALIASES: dict[str, str] = {
 # Threshold to distinguish seconds from milliseconds.
 _MS_THRESHOLD = 1_000_000_000_000
 
+# China (and some overseas) vehicle payloads use Java-style date strings, e.g.
+# ``Sat Nov 22 00:00:00 CST 2025`` for ``autoBoughtTime``. Parse without relying
+# on system locale for ``%b``.
+_EN_MONTH: dict[str, int] = {
+    m: i
+    for i, m in enumerate(
+        ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
+        start=1,
+    )
+}
+
+# Offset hours for the timezone token in those strings (CN uses CST = UTC+8).
+_JAVA_DATE_TZ_OFFSET_HOURS: dict[str, int] = {
+    "CST": 8,
+    "GMT": 0,
+    "UTC": 0,
+}
+
+
+def _parse_java_style_date_string(s: str) -> datetime | None:
+    """Parse ``Wed Nov 22 00:00:00 CST 2025`` into UTC (fixed-offset TZ only)."""
+    parts = s.split()
+    if len(parts) != 6:
+        return None
+    _wk, mon, day_s, hms, tz_token, year_s = parts
+    mon_num = _EN_MONTH.get(mon)
+    if mon_num is None:
+        return None
+    offset_h = _JAVA_DATE_TZ_OFFSET_HOURS.get(tz_token)
+    if offset_h is None:
+        return None
+    try:
+        day = int(day_s)
+        year = int(year_s)
+        h, m, sec = (int(x) for x in hms.split(":"))
+    except ValueError:
+        return None
+
+    naive = datetime(year, mon_num, day, h, m, sec)
+    src_tz = timezone(timedelta(hours=offset_h))
+    return naive.replace(tzinfo=src_tz).astimezone(UTC)
+
 
 def parse_byd_timestamp(value: Any) -> datetime | None:
-    """Convert a BYD epoch timestamp (seconds **or** milliseconds) to a UTC datetime.
+    """Convert a BYD time value to a UTC datetime.
 
-    Returns ``None`` when the value is ``None`` or not numeric.
+    Accepts:
+
+    * epoch seconds or milliseconds (int/float or numeric string),
+    * ISO-8601 strings (with optional ``Z``),
+    * Java-style locale strings with English month abbreviations and a known
+      ``CST``/``GMT``/``UTC`` token (common on CN vehicle list payloads).
+
+    Returns ``None`` when the value is ``None``, empty, or not recognised.
     """
     if value is None:
-        return value
+        return None
     if isinstance(value, datetime):
-        return value
-    ts = int(value)
+        if value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped or stripped in _SENTINELS:
+            return None
+        parsed_java = _parse_java_style_date_string(stripped)
+        if parsed_java is not None:
+            return parsed_java
+        iso = stripped.replace("Z", "+00:00")
+        try:
+            dt = datetime.fromisoformat(iso)
+        except ValueError:
+            pass
+        else:
+            if dt.tzinfo is None:
+                return dt.replace(tzinfo=UTC)
+            return dt.astimezone(UTC)
+        try:
+            ts = int(stripped)
+        except ValueError:
+            return None
+    else:
+        try:
+            ts = int(value)
+        except (TypeError, ValueError):
+            try:
+                ts = int(float(value))
+            except (TypeError, ValueError):
+                return None
     if ts >= _MS_THRESHOLD:
         ts = ts // 1000
     return datetime.fromtimestamp(ts, tz=UTC)

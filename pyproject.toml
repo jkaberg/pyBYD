@@ -49,6 +49,7 @@ version-file = "src/pybyd/_version.py"
 [tool.hatch.build]
 artifacts = [
     "src/pybyd/data/bangcle_tables.bin",
+    "src/pybyd/data/wbsk_tables.json",
 ]
 
 [tool.hatch.build.targets.wheel]
