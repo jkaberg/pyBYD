@@ -47,7 +47,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pybyd.models.gps import GpsInfo
-from pybyd.models.realtime import VehicleRealtimeData
+from pybyd.models.realtime import DoorOpenState, VehicleRealtimeData
 
 _GPS_NULL_ISLAND_THRESHOLD: float = 0.1
 _MISSING: object = object()
@@ -80,6 +80,19 @@ _PRESERVE_WHEN_NONE_FIELD_NAMES: tuple[str, ...] = (
     "total_energy",
     "total_consumption",
     "total_consumption_en",
+)
+
+# Door/trunk open sensors: API often reports CLOSED (0) as a non-authoritative
+# default; treat like numeric zero-drop (preserve previous OPEN, drop CLOSED
+# when there is no prior value).
+_DOOR_CLOSED_NOISE_FIELD_NAMES: tuple[str, ...] = (
+    "left_front_door",
+    "right_front_door",
+    "left_rear_door",
+    "right_rear_door",
+    "trunk_lid",
+    "sliding_door",
+    "forehold",
 )
 
 RealtimeFieldFilter = Callable[[str, Any, Any, bool], Any | object]
@@ -158,9 +171,27 @@ def _preserve_when_none_filter(
     return _MISSING
 
 
+def _door_closed_noise_filter(
+    _: str,
+    previous_value: Any,
+    incoming_value: Any,
+    incoming_present: bool,
+) -> Any | object:
+    """Drop ambiguous CLOSED readings unless we already have a stronger signal."""
+    if not incoming_present:
+        return _MISSING
+    is_closed = incoming_value == DoorOpenState.CLOSED or incoming_value == 0
+    if not is_closed:
+        return _MISSING
+    if previous_value is None:
+        return None
+    return previous_value
+
+
 _REALTIME_FIELD_FILTERS: dict[str, tuple[RealtimeFieldFilter, ...]] = {
     **{field_name: (_drop_zero_value_filter,) for field_name in _ZERO_DROP_FIELD_NAMES},
     **{field_name: (_preserve_when_none_filter,) for field_name in _PRESERVE_WHEN_NONE_FIELD_NAMES},
+    **{field_name: (_door_closed_noise_filter,) for field_name in _DOOR_CLOSED_NOISE_FIELD_NAMES},
 }
 
 
@@ -207,7 +238,7 @@ def apply_realtime_filters(
     """Apply all realtime filtering rules in one place.
 
     Rules currently include:
-    - selected realtime zero-drop gating (doors/locks, SOC/range/tire pressure/odometer).
+    - selected realtime zero-drop gating (door open sensors, locks, SOC/range/tire pressure/odometer).
 
     The returned model is either:
     - the original incoming payload when no override is needed, or

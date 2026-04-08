@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 def _env_bool(value: str | None, default: bool) -> bool:
@@ -94,6 +94,23 @@ class BydConfig(BaseModel):
         GPS, remote commands).
     device : DeviceProfile
         Device identity fields.
+    app_channel : str
+        CN app channel (default ``"99"``).
+    cn_app_version : str
+        CN app version string for login inner payload.
+    cn_app_inner_version : str
+        CN internal app version; also sent as HTTP header ``version`` in CN mode.
+    target_brand : str
+        CN brand id for signing and MQTT broker field selection (e.g. ``"1"`` dynasty).
+    vehicle_brand : str
+        CN vehicle brand id in token outer envelope.
+    network_operator : str
+        CN network operator string (default Unicode ``无``).
+    brand_flag : str
+        HTTP header ``BrandFlag`` in CN mode (reference app uses ``dynasty``).
+    region : str or None
+        Optional ``"cn"`` or ``"overseas"`` from ``BYD_REGION`` to force API region
+        instead of inferring from ``base_url``.
     """
 
     model_config = ConfigDict(
@@ -120,6 +137,30 @@ class BydConfig(BaseModel):
     mqtt_keepalive: int = 120
     mqtt_timeout: float = 10.0
     device: DeviceProfile = Field(default_factory=DeviceProfile)
+    app_channel: str = "99"
+    cn_app_version: str = "9.10.2"
+    cn_app_inner_version: str = "502"
+    target_brand: str = "1"
+    vehicle_brand: str = "1"
+    network_operator: str = "\u65e0"
+    brand_flag: str = "dynasty"
+    region: str | None = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def is_china_region(self) -> bool:
+        """True when using China API (WBSK, CN endpoints).
+
+        Uses ``BYD_REGION`` when set to ``cn`` or ``overseas``; otherwise detects
+        ``cn.byd.auto`` in ``base_url`` (same rule as BYD-re ``client.js``).
+        """
+        if self.region is not None:
+            normalized = self.region.strip().lower()
+            if normalized == "cn":
+                return True
+            if normalized in {"overseas", "eu", "intl", "global"}:
+                return False
+        return "cn.byd.auto" in self.base_url.lower()
 
     @classmethod
     def from_env(cls, **overrides: Any) -> BydConfig:
@@ -184,6 +225,14 @@ class BydConfig(BaseModel):
             "BYD_TBOX_VERSION": "tbox_version",
             "BYD_IS_AUTO": "is_auto",
             "BYD_CONTROL_PIN": "control_pin",
+            "BYD_APP_CHANNEL": "app_channel",
+            "BYD_CN_APP_VERSION": "cn_app_version",
+            "BYD_CN_APP_INNER_VERSION": "cn_app_inner_version",
+            "BYD_TARGET_BRAND": "target_brand",
+            "BYD_VEHICLE_BRAND": "vehicle_brand",
+            "BYD_NETWORK_OPERATOR": "network_operator",
+            "BYD_BRAND_FLAG": "brand_flag",
+            "BYD_REGION": "region",
         }
         config_kwargs: dict[str, Any] = {"device": device}
         for env_key, field_name in _ENV_CONFIG_MAP.items():

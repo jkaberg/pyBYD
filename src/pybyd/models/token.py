@@ -18,6 +18,8 @@ class AuthToken(BaseModel):
         Token for signature key derivation.
     encry_token : str
         Token for encryption key derivation.
+    super_id : str or None
+        CN ``superId`` when present; used for MQTT and outer ``identifier``.
     raw : dict
         Full decoded token dict for access to additional fields.
     """
@@ -27,4 +29,5 @@ class AuthToken(BaseModel):
     user_id: str
     sign_token: str
     encry_token: str
+    super_id: str | None = None
     raw: dict[str, Any]

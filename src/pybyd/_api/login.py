@@ -160,5 +160,6 @@ def parse_login_response(
         user_id=str(token["userId"]),
         sign_token=str(token["signToken"]),
         encry_token=str(token["encryToken"]),
+        super_id=None,
         raw=token,
     )

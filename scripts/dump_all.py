@@ -24,6 +24,19 @@ Options::
     --skip-hvac          Skip HVAC status endpoint
     --skip-realtime      Skip realtime endpoint
     --skip-latest-config Skip latest capability-config endpoint
+
+China (CN) example::
+
+    export BYD_BASE_URL="https://dilinksuperappserver-cn.byd.auto"
+    export BYD_USERNAME="13800138000"
+    export BYD_PASSWORD="your-password"
+    export BYD_APP_CHANNEL="99"
+    export BYD_CN_APP_VERSION="9.10.2"
+    export BYD_CN_APP_INNER_VERSION="502"
+    export BYD_TARGET_BRAND="1"
+    python scripts/dump_all.py --json --output dump-cn.json
+
+Text and JSON output include ``region`` (``cn`` / ``overseas``) and ``base_url`` so dumps are self-describing.
 """
 
 from __future__ import annotations
@@ -248,8 +261,11 @@ async def main() -> None:
         skip.add("latest_config")
 
     config = BydConfig.from_env()
+    region = "cn" if config.is_china_region else "overseas"
     result: dict[str, Any] = {
         "timestamp": datetime.now(UTC).isoformat(),
+        "region": region,
+        "base_url": str(config.base_url),
         "app_version": config.app_version,
         "app_inner_version": config.app_inner_version,
         "vehicles": [],
@@ -258,6 +274,8 @@ async def main() -> None:
     out: list[str] = []
     out.append(_section("pybyd dump_all"))
     out.append(f"  time      : {result['timestamp']}")
+    out.append(f"  region    : {region}")
+    out.append(f"  base_url  : {config.base_url}")
     out.append(f"  app_ver   : {config.app_version} (inner {config.app_inner_version})")
 
     async with BydClient(config) as client:

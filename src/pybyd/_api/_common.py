@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from pybyd._api._envelope import build_token_outer_envelope
+from pybyd._api.cn_envelope import build_cn_inner_base, build_cn_token_outer_envelope
 from pybyd._constants import SESSION_EXPIRED_CODES
 from pybyd._crypto.aes import aes_decrypt_utf8
 from pybyd._transport import Transport
@@ -43,6 +44,9 @@ def build_inner_base(
     request_serial: str | None = None,
 ) -> dict[str, str]:
     """Build common inner payload fields used by most BYD endpoints."""
+    if config.is_china_region:
+        return build_cn_inner_base(config, now_ms=now_ms, vin=vin, request_serial=request_serial)
+
     if now_ms is None:
         now_ms = int(time.time() * 1000)
 
@@ -154,7 +158,14 @@ async def post_token_json(
     if now_ms is None:
         now_ms = int(time.time() * 1000)
 
-    outer, content_key = build_token_outer_envelope(config, session, inner, now_ms, user_type=user_type)
+    if config.is_china_region:
+        outer, content_key = build_cn_token_outer_envelope(
+            config, session, inner, now_ms, user_type=user_type
+        )
+    else:
+        outer, content_key = build_token_outer_envelope(
+            config, session, inner, now_ms, user_type=user_type
+        )
 
     response = await transport.post_secure(endpoint, outer)
     code = str(response.get("code", ""))

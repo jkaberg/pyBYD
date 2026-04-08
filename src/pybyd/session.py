@@ -15,7 +15,9 @@ class Session(BaseModel):
     Parameters
     ----------
     user_id : str
-        The authenticated user's ID.
+        The authenticated user's ID (brand-specific on CN when available).
+    super_id : str or None
+        CN super account id for MQTT username / outer identifier.
     sign_token : str
         Token used for request signature derivation.
     encry_token : str
@@ -38,8 +40,16 @@ class Session(BaseModel):
     user_id: str
     sign_token: str
     encry_token: str
+    super_id: str | None = None
     created_at: float = Field(default_factory=time.monotonic)
     ttl: float = 12 * 3600
+
+    @property
+    def effective_api_identifier(self) -> str:
+        """Identifier for CN outer payloads and MQTT (``superId`` preferred)."""
+        if self.super_id:
+            return self.super_id
+        return self.user_id
 
     def content_key(self) -> str:
         """AES key for encrypting/decrypting inner payload data.

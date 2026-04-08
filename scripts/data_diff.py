@@ -19,6 +19,16 @@ Options::
     --settle SECS        Seconds to wait after Enter before polling (default: 2)
     --baseline-delay S   Delay between noise-calibration snapshots (default: 4)
     --verbose / -v       Enable debug logging
+
+China (CN) example::
+
+    export BYD_BASE_URL="https://dilinksuperappserver-cn.byd.auto"
+    export BYD_USERNAME="13800138000"
+    export BYD_PASSWORD="your-password"
+    export BYD_APP_CHANNEL="99"
+    export BYD_CN_APP_INNER_VERSION="502"
+    export BYD_TARGET_BRAND="1"
+    python scripts/data_diff.py
 """
 
 from __future__ import annotations
