@@ -47,6 +47,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pybyd.models.gps import GpsInfo
+from pybyd.models.hvac import HvacStatus
 from pybyd.models.realtime import VehicleRealtimeData
 
 _GPS_NULL_ISLAND_THRESHOLD: float = 0.1
@@ -69,6 +70,18 @@ _ZERO_DROP_FIELD_NAMES: tuple[str, ...] = (
     "total_mileage",
     "total_mileage_v2",
     "oil_endurance",
+)
+
+# HVAC sensor-population fields the cloud uses together to signal a
+# placeholder payload: when every reading is the "no data" value the
+# payload carries no real sensor data, only state and setpoints. Used by
+# :func:`_is_hvac_placeholder` to detect the bad payload as a whole
+# rather than guarding each field individually — a real 0 °C reading or
+# real 0 µg/m³ PM measurement must round-trip cleanly.
+_HVAC_SENSOR_FIELDS: tuple[str, ...] = (
+    "temp_in_car",
+    "temp_out_car",
+    "pm",
 )
 
 # Energy consumption fields where the HTTP /getEnergyConsumption endpoint
@@ -215,6 +228,55 @@ def apply_realtime_filters(
     """
     baseline = previous if previous is not None else VehicleRealtimeData.model_validate({})
     updates = _apply_model_field_filters(baseline, incoming, _REALTIME_FIELD_FILTERS)
+    if updates:
+        return incoming.model_copy(update=updates)
+    return incoming
+
+
+def _is_hvac_placeholder(data: HvacStatus) -> bool:
+    """Return True when *data* carries no real sensor readings.
+
+    The HTTP /control/getStatusNow endpoint occasionally returns a
+    payload where every sensor-populated field (cabin temperature,
+    exterior temperature, PM2.5) is zero or absent, while state and
+    setpoint fields keep their last values. Treat such payloads as
+    placeholders and skip the sensor-field merge so the previous MQTT
+    readings survive until the next push.
+
+    Any one sensor reporting a real value flips the verdict — a payload
+    with ``pm: 0, temp_in_car: 22, temp_out_car: 0`` is accepted as a
+    legitimate cold-start reading where exterior happens to read 0 °C.
+    """
+    return all(
+        getattr(data, f, None) in (None, 0, 0.0) for f in _HVAC_SENSOR_FIELDS
+    )
+
+
+def apply_hvac_filters(
+    previous: HvacStatus | None,
+    incoming: HvacStatus,
+) -> HvacStatus:
+    """Apply HVAC filtering rules.
+
+    Drops the sensor-population fields (``temp_in_car``, ``temp_out_car``,
+    ``pm``) when *incoming* matches the placeholder signature — every
+    sensor field reads zero or is absent. Setpoints, state enums, and
+    other fields on the payload still flow through unchanged; only the
+    sensor readings are pinned to the previous values.
+
+    Temperature fields additionally use BYD's documented ``-129``
+    sentinel via :func:`is_temp_sentinel` on the model itself, so a real
+    0 °C reading on a non-placeholder payload round-trips unchanged.
+    """
+    if previous is None:
+        return incoming
+    if not _is_hvac_placeholder(incoming):
+        return incoming
+    updates: dict[str, Any] = {}
+    for field_name in _HVAC_SENSOR_FIELDS:
+        prev_value = getattr(previous, field_name, None)
+        if prev_value is not None:
+            updates[field_name] = prev_value
     if updates:
         return incoming.model_copy(update=updates)
     return incoming

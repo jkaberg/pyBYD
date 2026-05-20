@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from dataclasses import field as dc_field
 from typing import Any
 
-from pybyd._validators import apply_gps_filters, apply_realtime_filters
+from pybyd._validators import apply_gps_filters, apply_hvac_filters, apply_realtime_filters
 from pybyd.models.charging import ChargingStatus
 from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
@@ -228,10 +228,11 @@ class VehicleStateEngine:
             self._rebuild_snapshot()
 
     async def update_hvac(self, data: HvacStatus) -> None:
-        """Merge incoming HVAC data through the guard window."""
+        """Merge incoming HVAC data through centralized filters and guard window."""
         async with self._lock:
-            self._base_hvac = data
-            self._reconcile_projections("hvac", data)
+            validated = apply_hvac_filters(self._base_hvac, data)
+            self._base_hvac = validated
+            self._reconcile_projections("hvac", validated)
             self._rebuild_snapshot()
 
     async def update_gps(self, data: GpsInfo) -> None:

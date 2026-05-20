@@ -7,10 +7,12 @@ import pytest
 from pybyd._validators import (
     _has_valid_coordinates,
     apply_gps_filters,
+    apply_hvac_filters,
     apply_realtime_filters,
     guard_gps_coordinates,
 )
 from pybyd.models.gps import GpsInfo
+from pybyd.models.hvac import HvacStatus
 from pybyd.models.realtime import LockState, VehicleRealtimeData
 from pybyd.models.vehicle import EnergyType
 
@@ -383,6 +385,89 @@ class TestApplyRealtimePreserveWhenNone:
         filtered = apply_realtime_filters(previous, incoming)
 
         assert getattr(filtered, field_name) == incoming_value
+
+
+# ---------------------------------------------------------------------------
+# apply_hvac_filters – zero-drop gating for HVAC temperature / air quality
+# ---------------------------------------------------------------------------
+
+
+class TestApplyHvacPlaceholderGuard:
+    """Cross-field placeholder detection for HVAC payloads.
+
+    A payload where every sensor-population field reads ``0`` or is
+    absent is treated as a placeholder: the sensor fields are pinned to
+    the previous values while setpoints / state enums still flow
+    through. Any one sensor reporting a real value flips the verdict so
+    a genuine 0 °C reading (or 0 µg/m³ PM reading) round-trips intact.
+    """
+
+    def test_all_sensor_zeros_keeps_previous(self) -> None:
+        previous = HvacStatus.model_validate(
+            {"tempInCar": 22.0, "tempOutCar": 18.0, "pm": 12.0}
+        )
+        incoming = HvacStatus.model_validate(
+            {"tempInCar": 0, "tempOutCar": 0, "pm": 0, "mainSettingTemp": 24}
+        )
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_in_car == 22.0
+        assert filtered.temp_out_car == 18.0
+        assert filtered.pm == 12.0
+        # Non-sensor fields still update from incoming.
+        assert filtered.main_setting_temp == 24.0
+
+    def test_real_cabin_temperature_lets_payload_through(self) -> None:
+        """One real sensor reading proves the payload isn't placeholder."""
+        previous = HvacStatus.model_validate(
+            {"tempInCar": 22.0, "tempOutCar": 18.0, "pm": 12.0}
+        )
+        incoming = HvacStatus.model_validate(
+            {"tempInCar": 23.0, "tempOutCar": 0, "pm": 0}
+        )
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        # Incoming temp_in_car update accepted; the other two real-but-zero
+        # readings (cold-snap exterior, clean air) flow through too.
+        assert filtered.temp_in_car == 23.0
+        assert filtered.temp_out_car == 0.0
+        assert filtered.pm == 0.0
+
+    def test_genuine_zero_exterior_temperature_passes_through(self) -> None:
+        previous = HvacStatus.model_validate(
+            {"tempInCar": 22.0, "tempOutCar": 5.0, "pm": 12.0}
+        )
+        incoming = HvacStatus.model_validate(
+            {"tempInCar": 21.0, "tempOutCar": 0, "pm": 11.0}
+        )
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_out_car == 0.0
+
+    def test_placeholder_without_previous_passes_through(self) -> None:
+        """First poll: no previous values to preserve, accept incoming as-is."""
+        incoming = HvacStatus.model_validate(
+            {"tempInCar": 0, "tempOutCar": 0, "pm": 0}
+        )
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        # The model itself applies no sentinel rule for ``0`` on temperature
+        # fields, so the values pass through. Subsequent placeholder
+        # payloads will be guarded once a real reading establishes baseline.
+        assert filtered.temp_in_car == 0.0
+        assert filtered.temp_out_car == 0.0
+        assert filtered.pm == 0.0
+
+    @pytest.mark.parametrize("field_name", ["temp_in_car", "temp_out_car"])
+    def test_sentinel_temperature_maps_to_none(self, field_name: str) -> None:
+        """BYD's documented -129 sentinel maps to None on the model itself."""
+        m = HvacStatus.model_validate({field_name: -129})
+
+        assert getattr(m, field_name) is None
 
 
 # ---------------------------------------------------------------------------

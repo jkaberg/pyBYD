@@ -80,6 +80,7 @@ class HvacStatus(BydBaseModel):
 
     _SENTINEL_RULES: ClassVar[dict[str, Callable[..., bool]]] = {
         "temp_in_car": is_temp_sentinel,
+        "temp_out_car": is_temp_sentinel,
     }
 
     # --- A/C state ---
@@ -108,7 +109,7 @@ class HvacStatus(BydBaseModel):
     temp_in_car: float | None = None
     """Interior temperature (deg C). Sentinel ``-129`` -> ``None``."""
     temp_out_car: float | None = None
-    """Exterior temperature (deg C)."""
+    """Exterior temperature (deg C). Sentinel ``-129`` -> ``None``."""
     whether_support_adjust_temp: int | None = None
     """1 = dual-zone temperature adjustment supported."""
 
