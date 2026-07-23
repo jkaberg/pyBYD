@@ -889,6 +889,18 @@ class TestHvacPlaceholderFilter:
         assert filtered.temp_out_car == 0
         assert filtered.pm == 3.0
 
+    def test_first_poll_genuine_winter_zero_passes_through(self) -> None:
+        # Cold-boot consumer on a winter day: exterior genuinely 0 °C but
+        # the payload carries other real sensor values, so it is not a
+        # placeholder — no over-suppression on first poll.
+        incoming = HvacStatus.model_validate({"tempInCar": 0.5, "tempOutCar": 0, "pm": 2.0})
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        assert filtered.temp_in_car == 0.5
+        assert filtered.temp_out_car == 0
+        assert filtered.pm == 2.0
+
     def test_genuine_zero_previous_still_pinned(self) -> None:
         # A genuine 0 accepted earlier from a mixed payload keeps being
         # pinned over later placeholders.
