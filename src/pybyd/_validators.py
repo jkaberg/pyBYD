@@ -281,18 +281,27 @@ def apply_hvac_filters(
 ) -> HvacStatus:
     """Drop the all-zero-sensor placeholder HVAC payload.
 
-    BYD's HVAC HTTP endpoint occasionally returns a payload where every
+    BYD's HVAC HTTP endpoint returns a payload where every
     sensor-population field (``temp_in_car``, ``temp_out_car``, ``pm``)
-    reads 0 simultaneously — a placeholder, not real data.  When detected,
-    pin those three fields to their previous values.  Setpoints / state
-    enums on the same payload still update.
+    reads 0 simultaneously whenever the vehicle's HVAC block is asleep —
+    a placeholder, not real data.  When detected, each of those three
+    fields is pinned to its previous value when one exists, and cleared
+    to ``None`` otherwise — the placeholder's literal 0 must never
+    surface.  Setpoints / state enums on the same payload still update.
+
+    On first poll (``previous is None``) the placeholder is rejected
+    wholesale and the sensor fields resolve to ``None``, matching the
+    realtime zero-drop family's first-poll behaviour.  This matters in
+    practice: a parked car's HVAC block sleeps within minutes, so the
+    first poll after a consumer restart almost always lands on the
+    placeholder — accepting it surfaced a false ``0`` reading, which
+    then self-perpetuated as the pinned "previous value".
 
     A genuine 0 °C reading on one of the sensors round-trips intact as
     long as the same payload carries any other real sensor value (which
-    real payloads always do).
+    real payloads always do), and a genuine 0 already pinned from such
+    a payload keeps being pinned.
     """
-    if previous is None:
-        return incoming
     all_zero_or_missing = all(
         getattr(incoming, field, None) in (None, 0, 0.0) for field in _HVAC_SENSOR_PLACEHOLDER_FIELDS
     )
@@ -300,8 +309,8 @@ def apply_hvac_filters(
         return incoming
     updates: dict[str, Any] = {}
     for field in _HVAC_SENSOR_PLACEHOLDER_FIELDS:
-        prev_value = getattr(previous, field, None)
-        if prev_value is not None:
+        prev_value = getattr(previous, field, None) if previous is not None else None
+        if getattr(incoming, field, None) != prev_value:
             updates[field] = prev_value
     if not updates:
         return incoming
