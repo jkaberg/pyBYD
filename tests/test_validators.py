@@ -842,6 +842,31 @@ class TestHvacPlaceholderFilter:
         assert filtered.temp_out_car is None
         assert filtered.pm is None
 
+    def test_first_poll_sentinel_and_zero_placeholder_drops_fields(self) -> None:
+        # The exact wire shape captured from an affected vehicle: tempInCar
+        # arrives as the -129 sentinel (normalised to None by the model)
+        # while tempOutCar and pm are literal 0. The all-zero-OR-MISSING
+        # triad must be rejected wholesale on first poll too — this guards
+        # the sentinel-normalisation → placeholder-filter interaction.
+        incoming = HvacStatus.model_validate(
+            {
+                "tempInCar": -129,
+                "tempOutCar": 0,
+                "pm": 0,
+                "acSwitch": 0,
+                "status": 0,
+                "mainSettingTemp": 0.0,
+                "refrigeratorState": -1,
+            }
+        )
+        assert incoming.temp_in_car is None
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
     def test_placeholder_pins_previous_real_values(self) -> None:
         previous = HvacStatus.model_validate({"tempInCar": 22.0, "tempOutCar": 14.0, "pm": 8.0})
         incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)

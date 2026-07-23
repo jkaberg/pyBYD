@@ -279,28 +279,31 @@ def apply_hvac_filters(
     previous: HvacStatus | None,
     incoming: HvacStatus,
 ) -> HvacStatus:
-    """Drop the all-zero-sensor placeholder HVAC payload.
+    """Drop the all-zero-or-missing placeholder HVAC payload.
 
-    BYD's HVAC HTTP endpoint returns a payload where every
-    sensor-population field (``temp_in_car``, ``temp_out_car``, ``pm``)
-    reads 0 simultaneously whenever the vehicle's HVAC block is asleep —
-    a placeholder, not real data.  When detected, each of those three
-    fields is pinned to its previous value when one exists, and cleared
-    to ``None`` otherwise — the placeholder's literal 0 must never
-    surface.  Setpoints / state enums on the same payload still update.
+    BYD's HVAC HTTP endpoint has been observed returning a payload where
+    every sensor-population field (``temp_in_car``, ``temp_out_car``,
+    ``pm``) is 0 or missing simultaneously while the vehicle's HVAC
+    block is asleep — a placeholder, not real data.  When detected, each
+    of those three fields is pinned to its previous value when one
+    exists, and cleared to ``None`` otherwise, so the placeholder's
+    literal 0 does not surface as a reading.  Setpoints / state enums on
+    the same payload still update.
 
     On first poll (``previous is None``) the placeholder is rejected
     wholesale and the sensor fields resolve to ``None``, matching the
     realtime zero-drop family's first-poll behaviour.  This matters in
-    practice: a parked car's HVAC block sleeps within minutes, so the
-    first poll after a consumer restart almost always lands on the
+    practice: a parked car's HVAC block sleeps within minutes, so a
+    first poll after a consumer restart commonly lands on the
     placeholder — accepting it surfaced a false ``0`` reading, which
     then self-perpetuated as the pinned "previous value".
 
     A genuine 0 °C reading on one of the sensors round-trips intact as
-    long as the same payload carries any other real sensor value (which
-    real payloads always do), and a genuine 0 already pinned from such
-    a payload keeps being pinned.
+    long as the same payload carries any other real sensor value (true
+    of every real capture observed so far), and a genuine 0 already
+    pinned from such a payload keeps being pinned.  The trade-off: a
+    payload whose whole triad is genuinely 0-or-missing at once is
+    indistinguishable from the placeholder and is suppressed too.
     """
     all_zero_or_missing = all(
         getattr(incoming, field, None) in (None, 0, 0.0) for field in _HVAC_SENSOR_PLACEHOLDER_FIELDS
