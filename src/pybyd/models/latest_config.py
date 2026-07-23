@@ -100,10 +100,12 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             "1003",  # ventilation/heating (parent)
             "1004",  # tire pressure (parent)
             "1014",  # location
-            # 1030 / 1031 advertise the BYD app's "one-tap" feature, which
-            # is a *scheduled* departure pre-conditioning flow (BOOKINGAIR
-            # under the hood), not an instant command. Tracked so they don't
-            # show up as unknown function_nos; no separate capability flag.
+            # 1030 = "one-tap prep" (一键备车): the scheduled departure /
+            # pre-conditioning flow (BOOKINGAIR under the hood); no separate
+            # capability flag. 1031 = "one-click shutdown" (一键熄火): an
+            # instant engine-off command, exposed via the one_click_shutdown
+            # capability above. Listed here so neither shows up as an unknown
+            # function_no. Confirmed distinct on a live Sealion 7 (issue #161).
             "1030",
             "1031",
             "10020001",  # sunroof
