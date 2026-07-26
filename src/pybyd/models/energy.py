@@ -81,7 +81,11 @@ class EnergyConsumptionGraph(BydBaseModel):
 
 
 class CumulativeEnergyConsumption(BydBaseModel):
-    """Lifetime cumulative consumption, per leg.
+    """Lifetime AVERAGE consumption rate, per leg.
+
+    Named ``cumulativeEnergyConsumption`` by the API, but the fields it
+    carries are consumption rates (kWh/100km, L/100km) averaged over
+    the vehicle's lifetime — not an absolute cumulative energy total.
 
     Both legs are populated for hybrids when ``powerType="2"``; pure-EV
     or pure-ICE responses leave the unused leg empty.
