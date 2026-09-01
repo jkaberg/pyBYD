@@ -55,6 +55,20 @@ class ChargingState(BydEnum):
     # rely on it.
 
 
+class SentryStatus(BydEnum):
+    """Sentry mode state.
+
+    Confirmed via live toggle on a BYD Sealion 8 (AU region) using
+    scripts/data_diff.py: ON observed as 2, OFF observed as 4. Only two
+    states have been observed so far; any other raw value falls back to
+    UNKNOWN via BydEnum._missing_.
+    """
+
+    UNKNOWN = -1
+    ON = 2
+    OFF = 4
+
+
 class TirePressureUnit(BydEnum):
     """Unit used for tire pressure readings."""
 
@@ -589,8 +603,8 @@ class VehicleRealtimeData(BydBaseModel):
     """Power warning. 0=normal, >0=warning."""
 
     # --- Feature states ---
-    sentry_status: int | None = None
-    """Sentry/dashcam mode (0=off, 1=on)."""
+    sentry_status: SentryStatus = SentryStatus.UNKNOWN
+    """Sentry/dashcam mode. See :class:`SentryStatus`."""
     battery_heat_state: int | None = None
     """Battery heating state."""
     charge_heat_state: int | None = None
