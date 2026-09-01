@@ -533,15 +533,28 @@ class VehicleRealtimeData(BydBaseModel):
 
     # --- Energy consumption ---
     total_power: float | None = None
+    """Unmapped — semantics unconfirmed. Seen ``0.0`` while parked;
+    not yet observed non-zero. Do NOT assume this is a cumulative
+    energy counter without live confirmation (none of the fields on
+    this endpoint expose absolute lifetime kWh — see the note below)."""
     gl: float | None = None
     """Instantaneous battery power (W)."""
     total_energy: str | None = None
-    """Total energy (string; "--" when unavailable)."""
+    """Lifetime AVERAGE EV consumption rate, kWh/100km (string; "--"
+    when unavailable) — despite the name, this is **not** an absolute
+    energy total. Split into :attr:`total_energy_ev`/:attr:`total_energy_fuel`
+    by :func:`_split_hybrid_legs`, both in kWh/100km (or L/100km for the
+    fuel leg)."""
     nearest_energy_consumption: str | None = None
     """Nearest energy consumption (string; "--" when unavailable)."""
     nearest_energy_consumption_unit: str | None = None
     recent_50km_energy: str | None = None
-    """Recent 50 km energy (string; "--" when unavailable)."""
+    """AVERAGE EV consumption rate over the last 50km, kWh/100km
+    (string; "--" when unavailable) — **not** the absolute energy used
+    over that window. For the actual kWh figure, see
+    ``EnergyConsumption.nearest_energy_consumption.ev_consumption``
+    from the ``getEnergyConsumption`` endpoint (a rolling last-50km
+    window, not aligned to a specific trip)."""
 
     # --- Fuel (hybrid vehicles) ---
     oil_endurance: float | None = None
@@ -602,12 +615,21 @@ class VehicleRealtimeData(BydBaseModel):
     """Time-to-full is less than one minute."""
 
     # --- Energy (extended) ---
+    # NOTE: every field in this section is a CONSUMPTION RATE (kWh/100km,
+    # or L/100km for the fuel leg) despite names like "energy"/"total" that
+    # read as an absolute amount. None of them accumulate — the closest
+    # thing to an absolute-kWh figure on this vehicle is
+    # ``EnergyConsumption.nearest_energy_consumption.ev_consumption`` from
+    # the separate ``getEnergyConsumption`` endpoint (a rolling last-50km
+    # window, not a lifetime or per-trip total).
     energy_consumption: str | None = None
-    """Energy consumption value (string, differs from nearestEnergyConsumption)."""
+    """Recent EV consumption rate, kWh/100km (string; differs from
+    ``nearestEnergyConsumption`` in refresh cadence, not in unit)."""
     total_consumption: str | None = None
-    """Chinese-locale total consumption label."""
+    """Chinese-locale lifetime average consumption rate, kWh/100km."""
     total_consumption_en: str | None = None
-    """English-locale total consumption label (e.g. '16.6kW·h/100km')."""
+    """English-locale lifetime average consumption rate, kWh/100km
+    (e.g. '16.6kW·h/100km')."""
 
     # --- Hybrid leg breakouts (parsed from combined strings) ---
     # For each combined-form field, ``_split_hybrid_legs`` populates four
@@ -615,6 +637,9 @@ class VehicleRealtimeData(BydBaseModel):
     # The original (non-suffixed) field is also rebound to the EV-portion
     # string of the original payload as a backwards-compat alias — the raw
     # combined string remains accessible via ``raw``.
+    #
+    # All *_ev fields below are consumption RATES (kWh/100km), not
+    # absolute energy, same caveat as their un-suffixed source field above.
     energy_consumption_ev: float | None = None
     energy_consumption_ev_unit: str | None = None
     energy_consumption_fuel: float | None = None
