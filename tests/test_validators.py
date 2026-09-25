@@ -7,10 +7,12 @@ import pytest
 from pybyd._validators import (
     _has_valid_coordinates,
     apply_gps_filters,
+    apply_hvac_filters,
     apply_realtime_filters,
     guard_gps_coordinates,
 )
 from pybyd.models.gps import GpsInfo
+from pybyd.models.hvac import HvacStatus
 from pybyd.models.realtime import LockState, TirePressureUnit, VehicleRealtimeData
 from pybyd.models.vehicle import EnergyType
 
@@ -805,3 +807,151 @@ class TestEnergyConsumptionParsing:
         assert m.nearest_energy_consumption is None
         assert m.auto_model_graph is None
         assert m.timestamp is None
+
+
+# ---------------------------------------------------------------------------
+# HVAC placeholder filter
+# ---------------------------------------------------------------------------
+
+# The asleep-HVAC placeholder as observed on the wire: every
+# sensor-population field literal 0, setpoints 0, state enums inert.
+_HVAC_PLACEHOLDER_RAW = {
+    "tempInCar": 0,
+    "tempOutCar": 0,
+    "pm": 0,
+    "acSwitch": 0,
+    "status": 0,
+    "mainSettingTemp": 0.0,
+    "refrigeratorState": -1,
+}
+
+
+class TestHvacPlaceholderFilter:
+    """apply_hvac_filters: the all-zero sensor placeholder must never surface."""
+
+    def test_first_poll_placeholder_drops_sensor_fields(self) -> None:
+        # A parked car's HVAC block sleeps within minutes, so the first
+        # poll after a consumer restart almost always lands on the
+        # placeholder. It must be rejected wholesale (like the realtime
+        # zero-drop family), not accepted as a baseline of literal 0s.
+        incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
+    def test_first_poll_sentinel_and_zero_placeholder_drops_fields(self) -> None:
+        # The exact wire shape captured from an affected vehicle: tempInCar
+        # arrives as the -129 sentinel (normalised to None by the model)
+        # while tempOutCar and pm are literal 0. The all-zero-OR-MISSING
+        # triad must be rejected wholesale on first poll too — this guards
+        # the sentinel-normalisation → placeholder-filter interaction.
+        incoming = HvacStatus.model_validate(
+            {
+                "tempInCar": -129,
+                "tempOutCar": 0,
+                "pm": 0,
+                "acSwitch": 0,
+                "status": 0,
+                "mainSettingTemp": 0.0,
+                "refrigeratorState": -1,
+            }
+        )
+        assert incoming.temp_in_car is None
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
+    def test_placeholder_clears_fields_despite_previous_real_values(self) -> None:
+        # Previous real readings are NOT pinned over the placeholder:
+        # temperatures and particulates keep changing while the car
+        # sleeps, so a pinned reading goes stale while looking live.
+        # A poll with no live sensor data yields no sensor values.
+        previous = HvacStatus.model_validate({"tempInCar": 22.0, "tempOutCar": 14.0, "pm": 8.0})
+        incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
+    def test_placeholder_does_not_resurface_zero_over_none_previous(self) -> None:
+        # previous.temp_in_car is None (a -129 sentinel was normalised
+        # away); the placeholder's literal 0 must resolve to None, and
+        # the remaining fields clear alongside it.
+        previous = HvacStatus.model_validate({"tempInCar": -129, "tempOutCar": 14.0, "pm": 8.0})
+        assert previous.temp_in_car is None
+        incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
+    def test_placeholder_chain_stays_none_after_first_poll_rejection(self) -> None:
+        # Two consecutive placeholders from a cold start: the second one
+        # must not resurface 0 just because the (rejected) first left all
+        # sensor fields at None.
+        first = apply_hvac_filters(None, HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW))
+        second = apply_hvac_filters(first, HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW))
+
+        assert second.temp_in_car is None
+        assert second.temp_out_car is None
+        assert second.pm is None
+
+    def test_mixed_payload_passes_through(self) -> None:
+        # A payload carrying any real sensor value is not a placeholder:
+        # a genuine 0 °C winter reading on one sensor round-trips intact.
+        previous = HvacStatus.model_validate({"tempInCar": 22.0, "tempOutCar": 14.0, "pm": 8.0})
+        incoming = HvacStatus.model_validate({"tempInCar": 5.0, "tempOutCar": 0, "pm": 3.0})
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_in_car == 5.0
+        assert filtered.temp_out_car == 0
+        assert filtered.pm == 3.0
+
+    def test_first_poll_genuine_winter_zero_passes_through(self) -> None:
+        # Cold-boot consumer on a winter day: exterior genuinely 0 °C but
+        # the payload carries other real sensor values, so it is not a
+        # placeholder — no over-suppression on first poll.
+        incoming = HvacStatus.model_validate({"tempInCar": 0.5, "tempOutCar": 0, "pm": 2.0})
+
+        filtered = apply_hvac_filters(None, incoming)
+
+        assert filtered.temp_in_car == 0.5
+        assert filtered.temp_out_car == 0
+        assert filtered.pm == 2.0
+
+    def test_genuine_zero_previous_clears_on_placeholder(self) -> None:
+        # A genuine 0 accepted earlier from a mixed payload clears like
+        # any other previous reading when a placeholder arrives — the
+        # policy is uniform: no live data in the poll, no sensor value.
+        previous = HvacStatus.model_validate({"tempInCar": 5.0, "tempOutCar": 0, "pm": 3.0})
+        incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_in_car is None
+        assert filtered.temp_out_car is None
+        assert filtered.pm is None
+
+    def test_placeholder_still_updates_non_sensor_fields(self) -> None:
+        # Only the sensor-population fields are cleared; setpoints and
+        # state enums on the placeholder payload still update.
+        previous = HvacStatus.model_validate(
+            {"tempInCar": 22.0, "tempOutCar": 14.0, "pm": 8.0, "mainSettingTemp": 24.0}
+        )
+        incoming = HvacStatus.model_validate(_HVAC_PLACEHOLDER_RAW)
+
+        filtered = apply_hvac_filters(previous, incoming)
+
+        assert filtered.temp_out_car is None
+        assert filtered.main_setting_temp == 0.0
