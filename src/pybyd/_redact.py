@@ -21,7 +21,13 @@ _SENSITIVE_VALUE_KEYS: frozenset[str] = frozenset(
         "token",
         "authorization",
         "cookie",
-        # Encrypted/encoded payloads
+    }
+)
+
+# Encrypted/encoded payloads: redacted while still an opaque string blob,
+# but walked into once decrypted so debug logs keep the actual data.
+_ENCODED_BLOB_KEYS: frozenset[str] = frozenset(
+    {
         "encrydata",
         "responddata",
         "request",
@@ -53,7 +59,7 @@ def redact_for_log(value: Any, *, max_string: int = 512, _depth: int = 0) -> Any
         redacted: dict[str, Any] = {}
         for k, v in value.items():
             key = str(k)
-            if key.lower() in _SENSITIVE_VALUE_KEYS:
+            if key.lower() in _SENSITIVE_VALUE_KEYS or (key.lower() in _ENCODED_BLOB_KEYS and isinstance(v, str)):
                 redacted[key] = "<redacted>"
             else:
                 redacted[key] = redact_for_log(v, max_string=max_string, _depth=_depth + 1)

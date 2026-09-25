@@ -15,6 +15,7 @@ from typing import Any
 from pybyd._crypto.aes import aes_decrypt_utf8, aes_encrypt_hex
 from pybyd._crypto.hashing import compute_checkcode, md5_hex, pwd_login_key, sha1_mixed
 from pybyd._crypto.signing import build_sign_string
+from pybyd._redact import redact_for_log
 from pybyd._version import __version__ as _pybyd_version
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydAuthenticationError
@@ -88,7 +89,7 @@ def build_login_request(config: BydConfig, now_ms: int) -> dict[str, Any]:
         "countryCode": config.country_code,
         "functionType": "pwdLogin",
         "identifier": config.username,
-        "identifierType": "0",
+        "identifierType": config.identifier_type,
         "language": config.language,
         "reqTimestamp": req_timestamp,
     }
@@ -100,7 +101,7 @@ def build_login_request(config: BydConfig, now_ms: int) -> dict[str, Any]:
         "encryData": encry_data,
         "functionType": "pwdLogin",
         "identifier": config.username,
-        "identifierType": "0",
+        "identifierType": config.identifier_type,
         "imeiMD5": config.device.imei_md5,
         "isAuto": config.is_auto,
         "language": config.language,
@@ -154,7 +155,7 @@ def parse_login_response(
 
     plaintext = aes_decrypt_utf8(respond_data, pwd_login_key(password))
     inner = json.loads(plaintext)
-    _logger.debug("HTTP decoded endpoint=/app/account/login plaintext=%s", plaintext)
+    _logger.debug("HTTP decoded endpoint=/app/account/login payload=%s", redact_for_log(inner))
     token = inner.get("token") if isinstance(inner, dict) else None
 
     if not token or not token.get("userId") or not token.get("signToken") or not token.get("encryToken"):

@@ -117,12 +117,20 @@ class PowerGear(BydEnum):
 class StearingWheelHeat(BydEnum):
     """Steering wheel heating state.
 
-    Status values: ``-1`` = on, ``1`` = off.
+    Status values: ``-1`` = on, ``1`` = off, ``0`` = no data.
     Command values use a different scale (see ``to_command_level``).
+
+    ``ON`` occupies ``-1``, so unmapped values resolve to ``NO_DATA``
+    rather than the usual ``UNKNOWN``.
     """
 
     ON = -1
+    NO_DATA = 0
     OFF = 1
+
+    @classmethod
+    def _missing_(cls, value: object) -> StearingWheelHeat:
+        return cls.NO_DATA
 
     def to_command_level(self) -> int:
         """Return the value to send in a seat-climate command.
@@ -1015,6 +1023,6 @@ class VehicleRealtimeData(BydBaseModel):
     @property
     def is_steering_wheel_heating(self) -> bool | None:
         """Whether steering wheel heating is active."""
-        if self.steering_wheel_heat_state is None:
+        if self.steering_wheel_heat_state in (None, StearingWheelHeat.NO_DATA):
             return None
         return self.steering_wheel_heat_state == StearingWheelHeat.ON

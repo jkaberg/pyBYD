@@ -167,7 +167,7 @@ class HvacStatus(BydBaseModel):
 
         Returns ``None`` when the state is unknown.
         """
-        if self.steering_wheel_heat_state is None:
+        if self.steering_wheel_heat_state in (None, StearingWheelHeat.NO_DATA):
             return None
         return self.steering_wheel_heat_state == StearingWheelHeat.ON
 
