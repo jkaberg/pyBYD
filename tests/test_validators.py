@@ -860,6 +860,24 @@ class TestEnergyTypeLegSplit:
         assert _legs(m, "nearest_energy_consumption") == expected
         assert m.eq_consumption_unit == (expected[1] or expected[3])
 
+    def test_payload_dict_is_left_untouched(self) -> None:
+        """The client validates an MQTT payload twice; the second pass must
+        parse the original strings, not the ones the first pass rebound."""
+        payload = {
+            "energyConsumption": "6.1+8.4",
+            "nearestEnergyConsumption": "--",
+            "nearestEnergyConsumptionUnit": "--",
+            "totalEnergy": "6.7kW·h/100km+7.2L/100km",
+        }
+        original = dict(payload)
+
+        first = VehicleRealtimeData.model_validate(payload, context={"energy_type": EnergyType.HYBRID})
+        second = VehicleRealtimeData.model_validate(payload, context={"energy_type": EnergyType.HYBRID})
+
+        assert payload == original
+        assert second == first
+        assert second.eq_consumption is None
+
     def test_legacy_field_aliases_to_ev_portion(self) -> None:
         """The legacy non-suffixed string field is rebound to the
         EV-portion of the original combined string for backwards compat;

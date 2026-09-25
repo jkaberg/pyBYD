@@ -787,6 +787,9 @@ class VehicleRealtimeData(BydBaseModel):
         """
         if not isinstance(values, dict):
             return values
+        # Work on a copy: the caller's payload must come out of validation
+        # unchanged (the client validates an MQTT payload twice).
+        values = dict(values)
         # Stash the raw snapshot now so the rebinding below doesn't destroy
         # the original combined strings. Parent ``_clean_byd_values`` runs
         # after and only stashes ``raw`` if absent.
