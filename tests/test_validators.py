@@ -38,7 +38,8 @@ PARTIAL_LAT = _gps(lat=48.8566, lon=None)
 PARTIAL_LON = _gps(lat=None, lon=2.3522)
 
 # Real captures: Shark 6 PHEV in Brazil (hass-byd-vehicle#175), and a Seal
-# BEV in the UK with its display set to miles (hass-byd-vehicle#181).
+# BEV in the UK with its display set to miles plus the HTTP poll it
+# answered while asleep (hass-byd-vehicle#181).
 _SHARK_BR_RAW = {
     "totalConsumption": "(6.7度+7.2升)/百公里",
     "totalConsumptionEn": "(6.7kW·h+7.2L)/100km",
@@ -52,6 +53,17 @@ _SEAL_UK_RAW = {
     "totalConsumption": "19.9度/百公里",
     "totalConsumptionEn": "19.9kW·h/100km",
     "totalEnergy": "32.0kW·h/100miles",
+}
+_ASLEEP_HTTP_RAW = {
+    "powerSystem": 0,
+    "totalEnergy": "--",
+    "elecPercent": 0,
+    "enduranceMileageV2Unit": "--",
+    "nearestEnergyConsumptionUnit": "--",
+    "nearestEnergyConsumption": "--",
+    "recent50kmEnergy": "--",
+    "totalMileageV2Unit": "--",
+    "onlineState": 0,
 }
 
 
@@ -414,6 +426,125 @@ class TestApplyRealtimePreserveWhenNone:
         filtered = apply_realtime_filters(previous, incoming)
 
         assert getattr(filtered, field_name) == incoming_value
+
+
+_LEG_FIELDS = [
+    ("recent_50km_energy", "recent50kmEnergy"),
+    ("total_energy", "totalEnergy"),
+    ("total_consumption", "totalConsumption"),
+    ("total_consumption_en", "totalConsumptionEn"),
+]
+
+
+class TestApplyRealtimeConsumptionLegGuard:
+    """The per-leg split of each preserved consumption string is carried
+    over as a group when a payload produces nothing for the field, and
+    never mixed with a newer payload's legs."""
+
+    @pytest.mark.parametrize("name,raw_key", _LEG_FIELDS)
+    def test_sentinel_keeps_both_legs(self, name: str, raw_key: str) -> None:
+        previous = _realtime({raw_key: "6.7kW·h/100km+7.2L/100km"}, EnergyType.HYBRID)
+        incoming = _realtime({raw_key: "--"}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, name) == (6.7, "kWh/100km", 7.2, "L/100km")
+        assert getattr(filtered, name) == "6.7kW·h/100km"
+
+    @pytest.mark.parametrize("name,raw_key", _LEG_FIELDS)
+    def test_missing_key_keeps_both_legs(self, name: str, raw_key: str) -> None:
+        previous = _realtime({raw_key: "6.7kW·h/100km+7.2L/100km"}, EnergyType.HYBRID)
+        incoming = _realtime({"elecPercent": 80}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, name) == (6.7, "kWh/100km", 7.2, "L/100km")
+
+    @pytest.mark.parametrize("name,raw_key", _LEG_FIELDS)
+    def test_new_reading_replaces_both_legs(self, name: str, raw_key: str) -> None:
+        previous = _realtime({raw_key: "6.7kW·h/100km+7.2L/100km"}, EnergyType.HYBRID)
+        incoming = _realtime({raw_key: "6.8kW·h/100km+7.3L/100km"}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, name) == (6.8, "kWh/100km", 7.3, "L/100km")
+
+    @pytest.mark.parametrize("name,raw_key", _LEG_FIELDS)
+    def test_sentinel_without_previous_stays_none(self, name: str, raw_key: str) -> None:
+        incoming = _realtime({raw_key: "--"}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(None, incoming)
+
+        assert _legs(filtered, name) == (None, None, None, None)
+
+    def test_asleep_poll_keeps_real_captures(self) -> None:
+        shark = apply_realtime_filters(
+            _realtime(_SHARK_BR_RAW, EnergyType.HYBRID),
+            _realtime(_ASLEEP_HTTP_RAW, EnergyType.HYBRID),
+        )
+        seal = apply_realtime_filters(
+            _realtime(_SEAL_UK_RAW, EnergyType.EV),
+            _realtime(_ASLEEP_HTTP_RAW, EnergyType.EV),
+        )
+
+        for name in ("total_energy", "total_consumption", "total_consumption_en"):
+            assert _legs(shark, name) == (6.7, "kWh/100km", 7.2, "L/100km")
+        assert _legs(seal, "total_energy") == (32.0, "kWh/100miles", None, None)
+        assert _legs(seal, "recent_50km_energy") == (31.2, "kWh/100miles", None, None)
+        assert _legs(seal, "total_consumption_en") == (19.9, "kWh/100km", None, None)
+
+    def test_ev_only_payload_drops_previous_fuel_leg(self) -> None:
+        previous = _realtime(_SHARK_BR_RAW, EnergyType.HYBRID)
+        incoming = _realtime({"totalEnergy": "6.8kW·h/100km"}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, "total_energy") == (6.8, "kWh/100km", None, None)
+
+    def test_fuel_only_payload_drops_previous_ev_leg(self) -> None:
+        previous = _realtime(_SHARK_BR_RAW, EnergyType.HYBRID)
+        incoming = _realtime({"totalEnergy": "7.5L/100km"}, EnergyType.HYBRID)
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, "total_energy") == (None, None, 7.5, "L/100km")
+
+    def test_pure_ice_payload_replaces_fuel_leg(self) -> None:
+        # The legacy alias is None on every good ICE payload, so it can't be
+        # what triggers the carry-over on its own.
+        previous = _realtime({"totalConsumptionEn": "3.5L/100km"}, EnergyType.ICE)
+        incoming = _realtime({"totalConsumptionEn": "3.6L/100km"}, EnergyType.ICE)
+        assert incoming.total_consumption_en is None
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, "total_consumption_en") == (None, None, 3.6, "L/100km")
+
+    @pytest.mark.parametrize(
+        "previous_raw,incoming_raw,energy_type",
+        [
+            (_SHARK_BR_RAW, {"totalEnergy": "N/A"}, EnergyType.HYBRID),
+            (_SHARK_BR_RAW, {"totalEnergy": "(--+--)/100km"}, EnergyType.HYBRID),
+            ({"totalEnergy": "6.7kW·h/100km+7.2L/100km"}, {"totalEnergy": "--+--"}, EnergyType.HYBRID),
+            ({"totalEnergy": "7.2L/100km"}, {"totalEnergy": "N/A"}, EnergyType.ICE),
+        ],
+    )
+    def test_value_without_a_number_keeps_previous_legs(
+        self,
+        previous_raw: dict[str, object],
+        incoming_raw: dict[str, object],
+        energy_type: EnergyType,
+    ) -> None:
+        """No number is no data, like ``--``: the legs and the legacy string
+        are both kept, whatever the vehicle's energy type."""
+        previous = _realtime(previous_raw, energy_type)
+        incoming = _realtime(incoming_raw, energy_type)
+        assert incoming.total_energy is None
+
+        filtered = apply_realtime_filters(previous, incoming)
+
+        assert _legs(filtered, "total_energy") == _legs(previous, "total_energy")
+        assert filtered.total_energy == previous.total_energy
 
 
 class TestApplyRealtimeTirePressUnitGuard:
