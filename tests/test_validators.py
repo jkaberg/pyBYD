@@ -11,6 +11,7 @@ from pybyd._validators import (
     apply_realtime_filters,
     guard_gps_coordinates,
 )
+from pybyd.models._base import normalize_unit
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.realtime import LockState, TirePressureUnit, VehicleRealtimeData
@@ -35,6 +36,31 @@ NONE_NONE = _gps()  # lat=None, lon=None
 NULL_ISLAND = _gps(lat=0.001, lon=0.002)
 PARTIAL_LAT = _gps(lat=48.8566, lon=None)
 PARTIAL_LON = _gps(lat=None, lon=2.3522)
+
+# Real captures: Shark 6 PHEV in Brazil (hass-byd-vehicle#175), and a Seal
+# BEV in the UK with its display set to miles (hass-byd-vehicle#181).
+_SHARK_BR_RAW = {
+    "totalConsumption": "(6.7度+7.2升)/百公里",
+    "totalConsumptionEn": "(6.7kW·h+7.2L)/100km",
+    "totalEnergy": "6.7kW·h/100km+7.2L/100km",
+}
+_SEAL_UK_RAW = {
+    "energyConsumption": "19.4",
+    "nearestEnergyConsumption": "31.2",
+    "nearestEnergyConsumptionUnit": "kW·h/100miles",
+    "recent50kmEnergy": "31.2kW·h/100miles",
+    "totalConsumption": "19.9度/百公里",
+    "totalConsumptionEn": "19.9kW·h/100km",
+    "totalEnergy": "32.0kW·h/100miles",
+}
+
+
+def _realtime(raw: dict[str, object], energy_type: EnergyType) -> VehicleRealtimeData:
+    return VehicleRealtimeData.model_validate(dict(raw), context={"energy_type": energy_type})
+
+
+def _legs(model: VehicleRealtimeData, name: str) -> tuple[object, ...]:
+    return tuple(getattr(model, f"{name}_{suffix}") for suffix in ("ev", "ev_unit", "fuel", "fuel_unit"))
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +607,8 @@ class TestEnergyTypeLegSplit:
         assert m.energy_consumption_fuel is None
 
     def test_unit_companion_strings_populated(self) -> None:
-        """Each per-leg float has a parallel ``_unit`` string."""
+        """Each per-leg float has a parallel ``_unit`` string, in canonical
+        form whichever spelling the payload used."""
         m = VehicleRealtimeData.model_validate(
             {
                 "energyConsumption": "6.1+8.4",
@@ -597,8 +624,110 @@ class TestEnergyTypeLegSplit:
         assert m.total_energy_fuel_unit == "L/100km"
         assert m.total_consumption_en_ev_unit == "kWh/100km"
         assert m.total_consumption_en_fuel_unit == "L/100km"
-        assert m.total_consumption_ev_unit == "度/百公里"
-        assert m.total_consumption_fuel_unit == "升/百公里"
+        assert m.total_consumption_ev_unit == "kWh/100km"
+        assert m.total_consumption_fuel_unit == "L/100km"
+
+    def test_shark_br_legs(self) -> None:
+        m = _realtime(_SHARK_BR_RAW, EnergyType.HYBRID)
+        for name in ("total_energy", "total_consumption", "total_consumption_en"):
+            assert _legs(m, name) == (6.7, "kWh/100km", 7.2, "L/100km")
+
+    def test_imperial_display_keeps_its_distance(self) -> None:
+        """``totalEnergy`` and the last-50km fields follow the car's display
+        units, while ``totalConsumption``/``totalConsumptionEn`` stay per
+        100 km."""
+        m = _realtime(_SEAL_UK_RAW, EnergyType.EV)
+        assert _legs(m, "total_energy") == (32.0, "kWh/100miles", None, None)
+        assert _legs(m, "recent_50km_energy") == (31.2, "kWh/100miles", None, None)
+        assert _legs(m, "nearest_energy_consumption") == (31.2, "kWh/100miles", None, None)
+        assert _legs(m, "total_consumption") == (19.9, "kWh/100km", None, None)
+        assert _legs(m, "total_consumption_en") == (19.9, "kWh/100km", None, None)
+        assert m.eq_consumption_unit == "kWh/100miles"
+
+    @pytest.mark.parametrize(
+        "raw,energy_type,expected",
+        [
+            ("kW·h/100km", EnergyType.EV, (None, None, None, None)),
+            ("--kW·h/100km+7.2L/100km", EnergyType.HYBRID, (None, None, 7.2, "L/100km")),
+            ("(kW·h+7.2L)/100km", EnergyType.HYBRID, (None, None, 7.2, "L/100km")),
+        ],
+    )
+    def test_leg_without_number_is_not_read_from_its_unit(
+        self,
+        raw: str,
+        energy_type: EnergyType,
+        expected: tuple[object, ...],
+    ) -> None:
+        """A leg with a unit but no number yields no value, rather than the
+        ``100`` in ``/100km``."""
+        m = _realtime({"totalEnergy": raw}, energy_type)
+        assert _legs(m, "total_energy") == expected
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("6.1+8.4", (6.1, "kWh/100km", 8.4, "L/100km")),
+            ("(6.1+8.4)/100km", (6.1, "kWh/100km", 8.4, "L/100km")),
+            ("(6.1+8.4)/百英里", (6.1, "kWh/100miles", 8.4, "L/100miles")),
+        ],
+    )
+    def test_numeric_legs_get_the_default_quantity(self, raw: str, expected: tuple[object, ...]) -> None:
+        m = _realtime({"totalConsumption": raw}, EnergyType.HYBRID)
+        assert _legs(m, "total_consumption") == expected
+
+    def test_chinese_units_keep_their_distance(self) -> None:
+        m = _realtime({"totalConsumption": "(6.6度+7.3升)/百英里"}, EnergyType.HYBRID)
+        assert _legs(m, "total_consumption") == (6.6, "kWh/100miles", 7.3, "L/100miles")
+
+    def test_space_before_shared_unit(self) -> None:
+        m = _realtime({"totalConsumptionEn": "(6.6kW·h+7.3L) /100km"}, EnergyType.HYBRID)
+        assert _legs(m, "total_consumption_en") == (6.6, "kWh/100km", 7.3, "L/100km")
+
+    @pytest.mark.parametrize(
+        "raw,energy_type,expected",
+        [
+            ("(7.2L+6.7kW·h)/100km", EnergyType.HYBRID, (6.7, "kWh/100km", 7.2, "L/100km")),
+            ("7.2L/100miles+6.7kW·h/100miles", EnergyType.HYBRID, (6.7, "kWh/100miles", 7.2, "L/100miles")),
+            ("7.5L/100miles", EnergyType.HYBRID, (None, None, 7.5, "L/100miles")),
+            ("7.5L/100 km", EnergyType.HYBRID, (None, None, 7.5, "L/100km")),
+            ("7.5升/百英里", EnergyType.HYBRID, (None, None, 7.5, "L/100miles")),
+            ("6.7度/百英里", EnergyType.ICE, (6.7, "kWh/100miles", None, None)),
+            ("7.2L/100km+--kW·h/100km", EnergyType.HYBRID, (None, None, 7.2, "L/100km")),
+            ("--L/100km+6.7kW·h/100km", EnergyType.HYBRID, (6.7, "kWh/100km", None, None)),
+            ("7.2+6.7kW·h/100km", EnergyType.HYBRID, (6.7, "kWh/100km", 7.2, "L/100km")),
+            ("7.2L/100km+6.7", EnergyType.HYBRID, (6.7, "kWh/100km", 7.2, "L/100km")),
+            ("7.2L/100km+6.7L/100km", EnergyType.HYBRID, (7.2, "L/100km", 6.7, "L/100km")),
+            ("(--L+6.7)/100km", EnergyType.HYBRID, (6.7, "kWh/100km", None, None)),
+            ("(6.7+--kW·h)/100km", EnergyType.HYBRID, (None, None, 6.7, "L/100km")),
+        ],
+    )
+    def test_units_decide_the_leg(
+        self,
+        raw: str,
+        energy_type: EnergyType,
+        expected: tuple[object, ...],
+    ) -> None:
+        """A leg in kWh or L goes to the matching side, whatever its position
+        or the vehicle's energy type."""
+        m = _realtime({"totalEnergy": raw}, energy_type)
+        assert _legs(m, "total_energy") == expected
+
+    @pytest.mark.parametrize(
+        "unit,expected",
+        [
+            ("度/百公里", (10.1, "kWh/100km", None, None)),
+            ("升/百公里", (None, None, 10.1, "L/100km")),
+            ("升/百英里", (None, None, 10.1, "L/100miles")),
+            ("升", (None, None, 10.1, "L")),
+        ],
+    )
+    def test_nearest_unit_is_canonical_and_decides_the_leg(self, unit: str, expected: tuple[object, ...]) -> None:
+        m = _realtime(
+            {"nearestEnergyConsumption": "10.1", "nearestEnergyConsumptionUnit": unit},
+            EnergyType.HYBRID,
+        )
+        assert _legs(m, "nearest_energy_consumption") == expected
+        assert m.eq_consumption_unit == (expected[1] or expected[3])
 
     def test_legacy_field_aliases_to_ev_portion(self) -> None:
         """The legacy non-suffixed string field is rebound to the
@@ -670,6 +799,44 @@ class TestEnergyTypeLegSplit:
         )
         assert m.energy_consumption_fuel == 8.4
         assert m.energy_consumption is None
+
+
+class TestNormalizeUnit:
+    """normalize_unit folds the quantity and the distance it recognises;
+    anything else is kept as sent, minus the ``·``."""
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("kW·h/100km", "kWh/100km"),
+            ("kWh/100km", "kWh/100km"),
+            ("kW.h/100km", "kWh/100km"),
+            ("KWH/100 KM", "kWh/100km"),
+            ("kW·h/100\u00a0km", "kWh/100km"),
+            ("度/百公里", "kWh/100km"),
+            ("度/100km", "kWh/100km"),
+            ("L/100km", "L/100km"),
+            ("l/100km", "L/100km"),
+            ("升/百公里", "L/100km"),
+            ("kW·h/100miles", "kWh/100miles"),
+            ("kWh/100mi", "kWh/100miles"),
+            ("度/百英里", "kWh/100miles"),
+            ("L/100mile", "L/100miles"),
+            ("kW·h", "kWh"),
+            ("升", "L"),
+            ("KW·H/10.0km", "kWh/10.0km"),
+            ("L/1.00km", "L/1.00km"),
+            ("mi/kW·h", "mi/kWh"),
+            ("km", "km"),
+            ("miles", "miles"),
+            ("", ""),
+        ],
+    )
+    def test_normalize_unit(self, raw: str, expected: str) -> None:
+        assert normalize_unit(raw) == expected
+
+    def test_none_passes_through(self) -> None:
+        assert normalize_unit(None) is None
 
 
 # ---------------------------------------------------------------------------
@@ -790,6 +957,54 @@ class TestEnergyConsumptionParsing:
         g = m.auto_model_graph
         assert g is not None
         assert g.energy_consumption == [8.3, 8.3, 8.3, 8.2, 8.2, 8.4, 8.4]
+
+    def test_imperial_units_are_canonical(self) -> None:
+        """Seal BEV, UK, display set to miles (hass-byd-vehicle#181)."""
+        m = EnergyConsumption.model_validate(
+            {
+                "selfGraph": {
+                    "energyConsumption": ["0", "0", "0", "0", "0", "0", "31.2"],
+                    "energyConsumptionUnit": "kW·h/100miles",
+                },
+                "cumulativeEnergyConsumption": {
+                    "mileageUnit": "miles",
+                    "evUnit": "kW·h/100miles",
+                    "avgEvConsumption": "32.0",
+                    "oilUnit": "--",
+                    "totalMileage": "6598",
+                },
+                "nearestEnergyConsumption": {
+                    "evConsumption": "9.7",
+                    "evValueUnit": "kW·h",
+                    "avgEvConsumption": "31.2",
+                    "evUnit": "kW·h/100miles",
+                    "oilUnit": "--",
+                },
+            }
+        )
+        assert m.self_graph is not None
+        assert m.self_graph.energy_consumption_unit == "kWh/100miles"
+        c = m.cumulative_energy_consumption
+        assert c is not None
+        assert (c.ev_unit, c.mileage_unit, c.oil_unit) == ("kWh/100miles", "miles", "")
+        n = m.nearest_energy_consumption
+        assert n is not None
+        assert (n.ev_unit, n.ev_value_unit) == ("kWh/100miles", "kWh")
+
+    def test_chinese_units_are_canonical(self) -> None:
+        m = EnergyConsumption.model_validate(
+            {
+                "nearestEnergyConsumption": {
+                    "evUnit": "度/百公里",
+                    "evValueUnit": "度",
+                    "oilUnit": "升/百公里",
+                    "oilValueUnit": "升",
+                }
+            }
+        )
+        n = m.nearest_energy_consumption
+        assert n is not None
+        assert (n.ev_unit, n.ev_value_unit, n.oil_unit, n.oil_value_unit) == ("kWh/100km", "kWh", "L/100km", "L")
 
     def test_sentinel_strings_become_none(self) -> None:
         """`"--"` numeric sentinels become None on the parsed fields."""

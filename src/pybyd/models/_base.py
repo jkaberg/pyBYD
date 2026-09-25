@@ -51,6 +51,41 @@ COMMON_KEY_ALIASES: dict[str, str] = {
     "stearingWheelHeatState": "steeringWheelHeatState",
 }
 
+# ---------------------------------------------------------------------------
+# Unit strings shared by the realtime and energy models.
+# The cloud spells one unit several ways: ``kW·h/100km``, ``kWh/100km``,
+# and ``度/百公里`` in the Chinese-locale ``totalConsumption``.
+# ---------------------------------------------------------------------------
+_UNIT_QUANTITIES: dict[str, str] = {"kwh": "kWh", "度": "kWh", "l": "L", "升": "L"}
+_UNIT_DISTANCES: dict[str, str] = {
+    "100km": "100km",
+    "百公里": "100km",
+    "100mi": "100miles",
+    "100mile": "100miles",
+    "100miles": "100miles",
+    "百英里": "100miles",
+}
+
+
+def normalize_unit(text: str | None) -> str | None:
+    """Return the canonical form of a BYD energy or consumption unit.
+
+    The quantity and the per-distance part are folded separately, ignoring
+    case, whitespace, the ``·`` / ``.`` inside ``kW·h`` and the Chinese
+    spellings: ``kW·h/100km``, ``KWH/100 KM`` and ``度/百公里`` all become
+    ``kWh/100km``, ``升/百公里`` becomes ``L/100km``, and a per-100-miles
+    distance becomes ``100miles`` (``kWh/100miles``). A bare quantity folds
+    the same way (``kW·h`` → ``kWh``). A part it doesn't recognise is kept
+    as sent, minus the ``·``.
+    """
+    if text is None:
+        return None
+    quantity, sep, distance = text.replace("·", "").partition("/")
+    quantity = _UNIT_QUANTITIES.get("".join(quantity.split()).replace(".", "").casefold(), quantity)
+    distance = _UNIT_DISTANCES.get("".join(distance.split()).casefold(), distance)
+    return f"{quantity}{sep}{distance}"
+
+
 # Threshold to distinguish seconds from milliseconds.
 _MS_THRESHOLD = 1_000_000_000_000
 
