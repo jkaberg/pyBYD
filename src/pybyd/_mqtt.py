@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict
 from pybyd._api._common import build_inner_base, post_token_json
 from pybyd._crypto.aes import aes_decrypt_utf8
 from pybyd._crypto.hashing import md5_hex
+from pybyd._redact import redact_for_log
 from pybyd._transport import SecureTransport
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydCryptoError, BydError
@@ -229,17 +230,17 @@ class BydMqttRuntime:
 
         def on_message(_c: mqtt.Client, _userdata: Any, msg: mqtt.MQTTMessage) -> None:
             try:
-                parsed, plaintext = decode_mqtt_payload(msg.payload, self._decrypt_key_hex)
+                parsed, _plaintext = decode_mqtt_payload(msg.payload, self._decrypt_key_hex)
 
                 event_name = str(parsed.get("event") or "")
                 vin_value = parsed.get("vin")
                 vin = vin_value if isinstance(vin_value, str) and vin_value else None
                 self._logger.debug(
-                    "MQTT decoded topic=%s event=%s vin=%s plaintext=%s",
+                    "MQTT decoded topic=%s event=%s vin=%s payload=%s",
                     msg.topic,
                     event_name,
                     vin,
-                    plaintext,
+                    redact_for_log(parsed),
                 )
                 event = MqttEvent(
                     event=event_name,
