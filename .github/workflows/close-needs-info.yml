@@ -1,0 +1,44 @@
+name: Close needs-info issues
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  close:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: "open",
+              labels: "needs-info",
+              per_page: 100,
+            });
+            for (const issue of issues) {
+              // listForRepo also returns PRs
+              if (issue.pull_request) continue;
+              if (new Date(issue.updated_at).getTime() > cutoff) continue;
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: "No reply in 30 days, closing. Comment with the requested info and I'll reopen.",
+              });
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                state: "closed",
+                state_reason: "not_planned",
+              });
+              core.info(`closed #${issue.number}`);
+            }
