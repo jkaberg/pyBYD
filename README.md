@@ -1,5 +1,11 @@
 # pybyd
 
+[![CI](https://github.com/jkaberg/pyBYD/actions/workflows/ci.yml/badge.svg)](https://github.com/jkaberg/pyBYD/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/pybyd)](https://pypi.org/project/pybyd/)
+[![Python](https://img.shields.io/pypi/pyversions/pybyd)](https://pypi.org/project/pybyd/)
+[![License](https://img.shields.io/github/license/jkaberg/pyBYD)](LICENSE)
+[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/jkaberg)
+
 Async Python client for the BYD vehicle API.
 
 `pybyd` focuses on two things:
