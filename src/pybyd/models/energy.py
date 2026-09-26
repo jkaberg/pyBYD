@@ -13,7 +13,7 @@ from typing import Annotated, Any, ClassVar
 
 from pydantic import BeforeValidator, Field
 
-from pybyd.models._base import BydBaseModel, BydTimestamp
+from pybyd.models._base import BydBaseModel, BydTimestamp, normalize_unit
 
 
 def _to_float(value: Any) -> float | None:
@@ -49,22 +49,22 @@ def _to_float_list(value: Any) -> list[float]:
     return out
 
 
-def _strip_middot(value: Any) -> Any:
-    """Drop the ``·`` (middle-dot) the BYD cloud injects into unit strings.
+def _canonical_unit(value: Any) -> Any:
+    """Canonicalise a unit string with :func:`normalize_unit`.
 
-    HA-friendly unit strings drop the middot — ``kW·h/100km`` becomes
-    ``kWh/100km``. Applied to every unit field on this endpoint so the
-    realtime and energy models surface a single normalized form.
+    ``kW·h/100km`` becomes ``kWh/100km``. Applied to every unit field on
+    this endpoint so the realtime and energy models surface a single
+    normalized form.
     """
     if isinstance(value, str):
-        return value.replace("·", "")
+        return normalize_unit(value)
     return value
 
 
 _BydFloat = Annotated[float | None, BeforeValidator(_to_float)]
 _BydInt = Annotated[int | None, BeforeValidator(_to_int)]
 _BydFloatList = Annotated[list[float], BeforeValidator(_to_float_list)]
-_BydUnit = Annotated[str, BeforeValidator(_strip_middot)]
+_BydUnit = Annotated[str, BeforeValidator(_canonical_unit)]
 
 
 class EnergyConsumptionGraph(BydBaseModel):

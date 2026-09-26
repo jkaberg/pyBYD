@@ -11,7 +11,15 @@ from typing import Any, ClassVar
 
 from pydantic import ValidationInfo, model_validator
 
-from pybyd.models._base import COMMON_KEY_ALIASES, BydBaseModel, BydEnum, BydTimestamp, is_negative, is_temp_sentinel
+from pybyd.models._base import (
+    COMMON_KEY_ALIASES,
+    BydBaseModel,
+    BydEnum,
+    BydTimestamp,
+    is_negative,
+    is_temp_sentinel,
+    normalize_unit,
+)
 from pybyd.models.vehicle import EnergyType
 
 # ------------------------------------------------------------------
@@ -203,41 +211,51 @@ class AirCirculationMode(BydEnum):
 # a single-leg value, with the unit field disambiguating which leg.
 
 _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
-_FUEL_UNIT_RE = re.compile(r"L/100km|升", re.IGNORECASE)
-_EV_UNIT_RE = re.compile(r"kW[·.]?h/100km|度", re.IGNORECASE)
 _SENTINELS = frozenset({"", "--"})
 
 _LegSplit = tuple[str | None, str | None, str | None, str | None]
 
 
 def _first_num(text: str | None) -> float | None:
-    """Extract the first signed decimal in *text* as a float (or None)."""
+    """Extract the signed decimal *text* starts with as a float (or None).
+
+    Anchored like :func:`_extract_unit`: a leg that carries a unit but no
+    number (``"kW·h/100km"``) must not read as the ``100`` of its unit.
+    """
     if not text:
         return None
-    match = _NUM_RE.search(text)
+    match = _NUM_RE.match(text.strip())
     return float(match.group()) if match else None
 
 
-def _normalize_unit(text: str | None) -> str | None:
-    """Strip the ``·`` (middle-dot) the BYD cloud injects into unit strings.
-
-    The BYD API sends ``kW·h/100km`` etc.; HA-friendly unit strings drop the
-    middot (``kWh/100km``). Applied to every unit string surfaced from
-    realtime parsing so consumers see a single, normalized form.
-    """
-    if text is None:
-        return None
-    return text.replace("·", "")
-
-
 def _extract_unit(text: str | None) -> str:
-    """Return the substring trailing the leading signed decimal in *text*."""
+    """Return the canonical unit trailing the leading signed decimal in *text*.
+
+    A ``--`` in place of the number is skipped, so ``"--kW·h/100km"`` still
+    reads as ``kWh/100km``.
+    """
     if not text:
         return ""
     cleaned = text.strip()
     match = _NUM_RE.match(cleaned)
-    tail = cleaned if match is None else cleaned[match.end() :].strip()
-    return _normalize_unit(tail) or ""
+    tail = cleaned.lstrip("-") if match is None else cleaned[match.end() :]
+    return normalize_unit(tail.strip()) or ""
+
+
+def _quantity(unit: str) -> str:
+    """Return the quantity of a canonical unit: ``kWh`` (EV), ``L`` (fuel) or other."""
+    return unit.partition("/")[0]
+
+
+def _unit_or_default(unit: str, default: str) -> str:
+    """Return *unit*, completed from *default* when it names no quantity.
+
+    A numeric leg has no unit (``"6.1"``) or only the shared distance
+    (``"(6.1+8.4)/100km"`` splits into ``"6.1/100km"``).
+    """
+    if unit.startswith("/"):
+        return _quantity(default) + unit
+    return unit or default
 
 
 def _classify_two_legs(
@@ -246,10 +264,25 @@ def _classify_two_legs(
     default_ev_unit: str,
     default_fuel_unit: str,
 ) -> _LegSplit:
-    """Annotate two known leg strings with their unit substrings."""
-    ev_unit = _extract_unit(ev_str) or default_ev_unit
-    fuel_unit = _extract_unit(fuel_str) or default_fuel_unit
-    return ev_str, ev_unit, fuel_str, fuel_unit
+    """Annotate two leg strings with their units, EV leg first.
+
+    A leg's unit beats its position: the legs are swapped when a unit shows
+    the fuel leg first (the first in L, or the second in kWh), unless the
+    other unit says they are already in place.
+    """
+    ev_unit = _extract_unit(ev_str)
+    fuel_unit = _extract_unit(fuel_str)
+    ev_quantity, fuel_quantity = _quantity(ev_unit), _quantity(fuel_unit)
+    fuel_first = ev_quantity == "L" or fuel_quantity == "kWh"
+    in_place = ev_quantity == "kWh" or fuel_quantity == "L"
+    if fuel_first and not in_place:
+        ev_str, ev_unit, fuel_str, fuel_unit = fuel_str, fuel_unit, ev_str, ev_unit
+    return (
+        ev_str,
+        _unit_or_default(ev_unit, default_ev_unit),
+        fuel_str,
+        _unit_or_default(fuel_unit, default_fuel_unit),
+    )
 
 
 def _split_combined_string(
@@ -272,6 +305,10 @@ def _split_combined_string(
       - ``"EVform+Fuelform"`` with units inline (e.g. ``"6.1kW·h/100km+8.4L/100km"``)
       - ``"EVform+Fuelform"`` numeric only (e.g. ``"6.1+8.4"``)
       - single-leg, classified by embedded unit or ``energy_type``.
+
+    Units beat position and ``energy_type``: two legs are placed as
+    :func:`_classify_two_legs` describes, and a single leg in kWh or L goes
+    to the matching side.
     """
     if raw is None:
         return None, None, None, None
@@ -283,7 +320,7 @@ def _split_combined_string(
         close_idx = text.find(")")
         if close_idx != -1:
             inside = text[1:close_idx]
-            suffix = text[close_idx + 1 :].lstrip("/").strip()
+            suffix = text[close_idx + 1 :].strip().lstrip("/").strip()
             if "+" in inside:
                 left, _, right = inside.partition("+")
                 left, right = left.strip(), right.strip()
@@ -299,19 +336,16 @@ def _split_combined_string(
     if "+" in text:
         left, _, right = text.partition("+")
         left, right = left.strip(), right.strip()
-        # Detect inverse ordering when both halves carry units.
-        if _FUEL_UNIT_RE.search(left) and _EV_UNIT_RE.search(right):
-            return _classify_two_legs(right, left, default_ev_unit, default_fuel_unit)
         return _classify_two_legs(left, right, default_ev_unit, default_fuel_unit)
 
     inline_unit = _extract_unit(text)
-    if _FUEL_UNIT_RE.search(text):
-        return None, None, text, inline_unit or default_fuel_unit
-    if _EV_UNIT_RE.search(text):
-        return text, inline_unit or default_ev_unit, None, None
+    if _quantity(inline_unit) == "L":
+        return None, None, text, inline_unit
+    if _quantity(inline_unit) == "kWh":
+        return text, inline_unit, None, None
     if energy_type is EnergyType.ICE:
-        return None, None, text, inline_unit or default_fuel_unit
-    return text, inline_unit or default_ev_unit, None, None
+        return None, None, text, _unit_or_default(inline_unit, default_fuel_unit)
+    return text, _unit_or_default(inline_unit, default_ev_unit), None, None
 
 
 def _legacy_leg_alias(
@@ -356,11 +390,11 @@ def _split_nearest_energy_string(
     unit_text = str(unit or "").strip() if unit is not None else ""
     if unit_text in _SENTINELS:
         unit_text = ""
-    unit_text = _normalize_unit(unit_text) or ""
+    unit_text = normalize_unit(unit_text) or ""
 
-    if _FUEL_UNIT_RE.search(unit_text):
+    if _quantity(unit_text) == "L":
         return None, None, text, unit_text
-    if _EV_UNIT_RE.search(unit_text):
+    if _quantity(unit_text) == "kWh":
         return text, unit_text, None, None
     if energy_type is EnergyType.ICE:
         return None, None, text, unit_text
@@ -662,6 +696,9 @@ class VehicleRealtimeData(BydBaseModel):
     #
     # All *_ev fields below are consumption RATES (kWh/100km), not
     # absolute energy, same caveat as their un-suffixed source field above.
+    # The *_unit fields hold the canonical spelling (``normalize_unit``):
+    # ``kWh/100km`` / ``L/100km``, or ``kWh/100miles`` / ``L/100miles``
+    # where the cloud reports the car's imperial display units.
     energy_consumption_ev: float | None = None
     energy_consumption_ev_unit: str | None = None
     energy_consumption_fuel: float | None = None
@@ -750,6 +787,9 @@ class VehicleRealtimeData(BydBaseModel):
         """
         if not isinstance(values, dict):
             return values
+        # Work on a copy: the caller's payload must come out of validation
+        # unchanged (the client validates an MQTT payload twice).
+        values = dict(values)
         # Stash the raw snapshot now so the rebinding below doesn't destroy
         # the original combined strings. Parent ``_clean_byd_values`` runs
         # after and only stashes ``raw`` if absent.
@@ -795,8 +835,8 @@ class VehicleRealtimeData(BydBaseModel):
                 "total_consumption_ev_unit",
                 "total_consumption_fuel",
                 "total_consumption_fuel_unit",
-                "度/百公里",
-                "升/百公里",
+                "kWh/100km",
+                "L/100km",
             ),
             (
                 "totalConsumptionEn",
@@ -831,8 +871,12 @@ class VehicleRealtimeData(BydBaseModel):
             # Backwards-compat: rebind the original (str) field to the
             # EV-portion. For HYBRID where the cloud returns only the
             # petrol leg, fall back to the fuel value so legacy consumers
-            # don't suddenly see ``None``.
-            values[raw_key] = _legacy_leg_alias(ev_str, fuel_str, energy_type)
+            # don't suddenly see ``None``. When neither leg has a number the
+            # alias is None too, like ``--``, so the legs and the legacy
+            # string are kept across the same polls.
+            values[raw_key] = (
+                _legacy_leg_alias(ev_str, fuel_str, energy_type) if ev_n is not None or fuel_n is not None else None
+            )
 
         if "nearestEnergyConsumption" in values:
             # Capture the raw single-number "recent consumption" summary
@@ -844,7 +888,7 @@ class VehicleRealtimeData(BydBaseModel):
                 if raw_eq_unit:
                     values.setdefault(
                         "eq_consumption_unit",
-                        _normalize_unit(str(raw_eq_unit)),
+                        normalize_unit(str(raw_eq_unit)),
                     )
             ev_str, ev_u, fuel_str, fuel_u = _split_nearest_energy_string(
                 values.get("nearestEnergyConsumption"),
