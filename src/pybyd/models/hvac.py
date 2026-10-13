@@ -7,7 +7,7 @@ from typing import Any, ClassVar
 
 from pydantic import model_validator
 
-from pybyd._constants import celsius_to_scale
+from pybyd._constants import celsius_to_scale, temp_offset_from_range
 from pybyd.models._base import COMMON_KEY_ALIASES, BydBaseModel, BydEnum, is_temp_sentinel
 from pybyd.models.realtime import AirCirculationMode, SeatHeatVentState, StearingWheelHeat
 
@@ -112,6 +112,10 @@ class HvacStatus(BydBaseModel):
     """Exterior temperature (deg C)."""
     whether_support_adjust_temp: int | None = None
     """1 = dual-zone temperature adjustment supported."""
+    vde_temp_range_min: float | None = None
+    """Lowest settable temperature (deg C), eg 17 on the HAN."""
+    vde_temp_range_max: float | None = None
+    """Highest settable temperature (deg C), eg 33 on the HAN."""
 
     # --- Defrost ---
     front_defrost_status: int | None = None
@@ -155,6 +159,11 @@ class HvacStatus(BydBaseModel):
             return int(self.status) == int(HvacOverallStatus.ON)
         except (TypeError, ValueError):
             return False
+
+    @property
+    def temp_offset(self) -> float:
+        """°C offset of this vehicle's 1-17 temperature scale."""
+        return temp_offset_from_range(self.vde_temp_range_min, self.vde_temp_range_max)
 
     @property
     def interior_temp_available(self) -> bool:

@@ -129,6 +129,7 @@ class BydCar:
             schedule_fn=client.schedule_climate,
             vin=vin,
             execute_command=self._execute_command,
+            get_state=lambda: self._engine.snapshot,
             available=self._capabilities.climate,
         )
         self.seat = SeatCapability(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from pybyd._constants import minutes_to_time_span
+from pybyd._constants import DEFAULT_TEMP_OFFSET_C, minutes_to_time_span
 from pybyd._state_engine import ProjectionSpec
 from pybyd.exceptions import BydEndpointNotSupportedError
 from pybyd.models.control import ClimateScheduleParams, ClimateStartParams
@@ -13,6 +13,8 @@ from pybyd.models.realtime import SeatHeatVentState, StearingWheelHeat
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
+
+    from pybyd._state_engine import VehicleSnapshot
 
 
 class HvacCapability:
@@ -26,6 +28,7 @@ class HvacCapability:
         schedule_fn: Callable[..., Awaitable[Any]],
         vin: str,
         execute_command: Callable[..., Awaitable[None]],
+        get_state: Callable[[], VehicleSnapshot] | None = None,
         available: bool | None = True,
     ) -> None:
         self._start_fn = start_fn
@@ -33,11 +36,24 @@ class HvacCapability:
         self._schedule_fn = schedule_fn
         self._vin = vin
         self._execute = execute_command
+        self._get_state = get_state
         self._available = available
 
     @property
     def available(self) -> bool:
         return bool(self._available)
+
+    @property
+    def temp_offset(self) -> float:
+        """°C offset of the 1-17 scale, from the last HVAC status if known."""
+        hvac = self._get_state().hvac if self._get_state is not None else None
+        return hvac.temp_offset if hvac is not None else DEFAULT_TEMP_OFFSET_C
+
+    @property
+    def temp_range(self) -> tuple[float, float]:
+        """Settable temperature range in °C."""
+        offset = self.temp_offset
+        return offset + 1, offset + 17
 
     def _ensure_available(self) -> None:
         if not self.available:
@@ -53,13 +69,14 @@ class HvacCapability:
         Parameters
         ----------
         temperature
-            Target temperature in °C (15-31).
+            Target temperature in °C (15-31, or the vehicle's reported
+            range when it differs, eg 17-33 on the HAN).
         duration
             Run duration in minutes (10/15/20/25/30).
         """
         self._ensure_available()
         time_span = minutes_to_time_span(duration)
-        params = ClimateStartParams(temperature=temperature, time_span=time_span)
+        params = ClimateStartParams(temperature=temperature, time_span=time_span, temp_offset=self.temp_offset)
         specs = [
             ProjectionSpec("hvac", "status", HvacOverallStatus.ON),
             ProjectionSpec("hvac", "main_setting_temp_new", temperature),

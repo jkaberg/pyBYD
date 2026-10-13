@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 from pydantic.alias_generators import to_camel
 
-from pybyd._constants import celsius_to_scale
+from pybyd._constants import DEFAULT_TEMP_OFFSET_C, celsius_to_scale
 from pybyd.models._base import BydBaseModel
 
 if TYPE_CHECKING:
@@ -333,18 +333,23 @@ class ControlParams(BaseModel):
 class ClimateStartParams(ControlParams):
     """Parameters for starting HVAC immediately (commandType ``OPENAIR``).
 
-    Temperatures are specified in °C (15-31) and automatically converted
-    to BYD's internal scale (1-17) on serialisation.
+    Temperatures are specified in °C (15-31 by default) and automatically
+    converted to BYD's internal scale (1-17) on serialisation.  Set
+    ``temp_offset`` for vehicles with a shifted range (see
+    :func:`pybyd._constants.temp_offset_from_range`).
 
     Sensible defaults are provided for all API-required fields so that
     callers only need to supply ``temperature`` and ``time_span``.
     """
 
-    temperature: float | None = Field(default=None, ge=15.0, le=31.0)
-    """Driver temperature setpoint in °C (15-31)."""
+    temperature: float | None = None
+    """Driver temperature setpoint in °C (15-31 by default)."""
 
-    copilot_temperature: float | None = Field(default=None, ge=15.0, le=31.0)
-    """Passenger temperature setpoint in °C (15-31).  Defaults to *temperature*."""
+    copilot_temperature: float | None = None
+    """Passenger temperature setpoint in °C.  Defaults to *temperature*."""
+
+    temp_offset: float = Field(default=DEFAULT_TEMP_OFFSET_C, exclude=True)
+    """°C offset of the vehicle's 1-17 scale (14 → 15-31 °C, 16 → 17-33 °C)."""
 
     cycle_mode: int = Field(default=2, ge=0)
     """Air recirculation: 1=external (fresh), 2=internal (recirculate)."""
@@ -359,9 +364,16 @@ class ClimateStartParams(ControlParams):
     air_conditioning_mode: int = Field(default=1, ge=0)
     wind_level: int | None = Field(default=None, ge=0)
 
+    @model_validator(mode="after")
+    def _check_temp_range(self) -> ClimateStartParams:
+        for value in (self.temperature, self.copilot_temperature):
+            if value is not None:
+                celsius_to_scale(value, offset=self.temp_offset)
+        return self
+
     @field_serializer("temperature", "copilot_temperature")
     def _serialize_temp(self, value: float | None) -> int | None:
-        return celsius_to_scale(value) if value is not None else None
+        return celsius_to_scale(value, offset=self.temp_offset) if value is not None else None
 
     def to_control_params_map(self) -> dict[str, Any]:
         """Return a dict that can be JSON-encoded into ``controlParamsMap``."""

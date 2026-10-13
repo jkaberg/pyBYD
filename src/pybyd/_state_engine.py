@@ -189,6 +189,10 @@ class VehicleStateEngine:
         """
         command_id = self._generate_command_id()
         now = time.monotonic()
+        # only the latest intent per field is projected, otherwise an older
+        # projection (eg ON) survives once a newer one (OFF) is confirmed
+        targets = {(spec.section, spec.field_name) for spec in specs}
+        self._projections = [p for p in self._projections if (p.section, p.field_name) not in targets]
         for spec in specs:
             self._projections.append(
                 FieldProjection(
