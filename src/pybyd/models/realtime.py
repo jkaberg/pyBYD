@@ -438,6 +438,7 @@ class VehicleRealtimeData(BydBaseModel):
         "ect_value": lambda v: is_temp_sentinel(v) or is_negative(v),
         # Warning / status indicators: -1 means unavailable.
         "ect": is_negative,
+        "epb": is_negative,
         "abs_warning": is_negative,
         "svs": is_negative,
         "srs": is_negative,
@@ -445,6 +446,7 @@ class VehicleRealtimeData(BydBaseModel):
         "esp": is_negative,
         "pwr": is_negative,
         "power_system": is_negative,
+        "power_battery_connection": is_negative,
         "tirepressure_system": is_negative,
         "rapid_tire_leak": is_negative,
         "left_front_tire_status": is_negative,
