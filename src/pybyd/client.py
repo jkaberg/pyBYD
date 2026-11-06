@@ -21,6 +21,7 @@ from pybyd._api import energy as _energy_api
 from pybyd._api import gps as _gps_api
 from pybyd._api import hvac as _hvac_api
 from pybyd._api import latest_config as _latest_config_api
+from pybyd._api import message_center as _message_center_api
 from pybyd._api import push_notifications as _push_api
 from pybyd._api import realtime as _realtime_api
 from pybyd._api import smart_charging as _smart_api
@@ -64,6 +65,11 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
+from pybyd.models.message_center import (
+    MessageGroup,
+    NotificationCategory,
+    VehicleMsgItemInfo,
+)
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import SmartChargingSchedule
@@ -1264,6 +1270,37 @@ class BydClient:
         code=1001 (not supported) on the Sealion 7 EU.
         """
         return await self._authed_call(_push_api.set_push_state, vin, enable=enable, push_type=push_type)
+
+    async def get_unread_vehicle_notifications(
+        self,
+        message_group: int = MessageGroup.VEHICLE,
+    ) -> list[VehicleMsgItemInfo]:
+        """Fetch the account's inbox messages (charging started/stopped, alerts, ...).
+
+        The endpoint is account-scoped (no VIN); messages name the car in
+        their ``content``.
+        """
+        response = await self._authed_call(_message_center_api.fetch_unread_messages, message_group)
+        return response.messages
+
+    async def get_notifications(
+        self,
+        category: NotificationCategory = NotificationCategory.VEHICLE,
+    ) -> list[VehicleMsgItemInfo]:
+        """Fetch the unread inbox messages of one category.
+
+        Fetching may consume unread messages; retain returned messages if
+        history is needed. This side effect needs further live verification.
+        """
+        response = await self._authed_call(_message_center_api.fetch_notifications, category)
+        return response.messages
+
+    async def get_all_notifications(self) -> dict[NotificationCategory, list[VehicleMsgItemInfo]]:
+        """Fetch every owner-account inbox category."""
+        result: dict[NotificationCategory, list[VehicleMsgItemInfo]] = {}
+        for category in NotificationCategory:
+            result[category] = await self.get_notifications(category)
+        return result
 
     # ------------------------------------------------------------------
     # Control commands

@@ -143,3 +143,25 @@ Helper tooling is in [scripts/](scripts/) and generally expects `BYD_USERNAME` /
 ## License
 
 MIT
+
+### Message center
+
+Read account-scoped unread notifications from the EU inbox:
+
+```python
+from pybyd import NotificationCategory
+
+messages = await client.get_notifications(NotificationCategory.VEHICLE)
+for message in messages:
+    print(message.push_time, message.title, message.content)
+```
+
+`NotificationCategory.SYSTEM` selects system messages. The request uses
+`messageGroup`, with no VIN or pagination parameters. Results preserve the
+original payload in `raw`. `BydCar.get_notifications()` is also account-scoped;
+it does not filter messages to that car.
+
+Fetching may consume unread messages; retain returned messages if history is
+needed. This side effect still needs a controlled comparison with the official
+app. A live EU owner-account query returned four charging-start/stop
+notifications for an ATTO 3 EVO. OTA notifications have not been verified.

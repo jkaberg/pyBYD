@@ -43,6 +43,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities
+from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.vehicle import Vehicle
 
@@ -264,6 +265,17 @@ class BydCar:
         data = await self._client.get_energy_consumption(self._vin)
         await self._engine.update_energy(data)
         return data
+
+    async def get_notifications(
+        self,
+        category: NotificationCategory = NotificationCategory.VEHICLE,
+    ) -> list[VehicleMsgItemInfo]:
+        """Fetch unread inbox messages of one category (account-scoped, see client)."""
+        return await self._client.get_notifications(category)
+
+    async def get_all_notifications(self) -> dict[NotificationCategory, list[VehicleMsgItemInfo]]:
+        """Fetch unread inbox messages of every supported category."""
+        return await self._client.get_all_notifications()
 
     async def save_charging_schedule(
         self,

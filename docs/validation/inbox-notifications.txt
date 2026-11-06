@@ -1,0 +1,10 @@
+pyBYD — LIVE vehicle inbox test
+UTC: 2026-11-06T22:05:51+00:00
+Endpoint: /app/messageCenter/getUnReadMessageList
+Filter: messageGroup=1; account-scoped, no VIN
+Authentication: OK (credentials hidden)
+Result: OK — 4 notification(s)
+{"notification": 1, "time": "2026-11-06 19:15:24+00:00", "title": "Finalizar carga", "content": "2026-11-06 20:15,BYD ATTO 3 EVO  El coche deja de cargar."}
+{"notification": 2, "time": "2026-11-06 18:54:47+00:00", "title": "Empezar carga", "content": "2026-11-06 19:54,BYD ATTO 3 EVO El coche comience a cargar."}
+{"notification": 3, "time": "2026-11-06 18:51:54+00:00", "title": "Finalizar carga", "content": "2026-11-06 19:51,BYD ATTO 3 EVO  El coche deja de cargar."}
+{"notification": 4, "time": "2026-11-06 18:47:40+00:00", "title": "Empezar carga", "content": "2026-11-06 19:47,BYD ATTO 3 EVO El coche comience a cargar."}
