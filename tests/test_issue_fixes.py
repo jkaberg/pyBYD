@@ -22,6 +22,7 @@ from pybyd.models.realtime import StearingWheelHeat, VehicleRealtimeData
         (-1, StearingWheelHeat.ON),
         (1, StearingWheelHeat.OFF),
         (0, StearingWheelHeat.NO_DATA),
+        (2, StearingWheelHeat.ON),
         (3, StearingWheelHeat.NO_DATA),
     ],
 )
