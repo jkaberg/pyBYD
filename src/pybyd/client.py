@@ -140,6 +140,7 @@ class BydClient:
         self._codec = BangcleCodec()
         self._transport: SecureTransport | None = None
         self._session: Session | None = None
+        self._guest_vins: dict[str, bool] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._mqtt_runtime: BydMqttRuntime | None = None
         self._mqtt_waiters: list[_MqttWaiter] = []
@@ -239,6 +240,9 @@ class BydClient:
             encry_token=token.encry_token,
             ttl=ttl,
         )
+        # What we know about each car's userType outlives the login.
+        self._session.guest_vins.update(self._guest_vins)
+        self._guest_vins = self._session.guest_vins
         # Update the running MQTT runtime's key immediately so any
         # in-flight messages benefit from the new key, then restart
         # the connection with fresh credentials.
@@ -984,6 +988,12 @@ class BydClient:
         """Fetch all vehicles associated with the account."""
         vehicles = await self._authed_call(_vehicle_api.fetch_vehicle_list)
         self._vehicle_metadata_by_vin = {v.vin: v for v in vehicles if v.vin}
+        # A car shared with this account ("Family and friends") must be
+        # addressed with userType=1; the list entry gives the first guess,
+        # and never overrides what the cloud's answers already settled.
+        for v in vehicles:
+            if v.vin:
+                self._guest_vins.setdefault(v.vin, bool(v.empower_id) or v.is_shared)
         return vehicles
 
     async def _energy_type_for(self, vin: str) -> EnergyType:

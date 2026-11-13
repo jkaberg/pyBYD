@@ -16,7 +16,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_token_json
+from pybyd._api._common import (
+    ENDPOINT_NOT_SUPPORTED_CODES,
+    build_inner_base,
+    post_token_json,
+    post_vehicle_json,
+)
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.exceptions import (
@@ -172,7 +177,11 @@ async def _fetch_control_endpoint(
     # means something different (generic rejection) for commands vs data endpoints.
     is_remote = endpoint in _REMOTE_CONTROL_ENDPOINTS
     extra = _REMOTE_CONTROL_EXTRA_CODES if is_remote else _CONTROL_EXTRA_CODES
-    result = await post_token_json(
+    # A guest account must declare itself on commands too. The helper's one
+    # retry only follows the refusal that means "wrong userType", which the
+    # cloud gives before the car hears anything.
+    post = post_vehicle_json if is_remote else post_token_json
+    result = await post(
         endpoint=endpoint,
         config=config,
         session=session,

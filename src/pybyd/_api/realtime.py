@@ -10,7 +10,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_token_json
+from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_vehicle_json
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.models.vehicle import EnergyType
@@ -39,7 +39,7 @@ async def fetch_realtime_endpoint(
     inner["energyType"] = str(int(energy_type))
     inner["tboxVersion"] = config.tbox_version
 
-    decoded = await post_token_json(
+    decoded = await post_vehicle_json(
         endpoint=endpoint,
         config=config,
         session=session,

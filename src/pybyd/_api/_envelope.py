@@ -34,6 +34,11 @@ def build_token_outer_envelope(
     now_ms : int
         Current time in milliseconds since epoch.
 
+    user_type : str, optional
+        The app's outer ``userType``. When given it is sent **and signed**:
+        the cloud answers ``1007`` to a ``userType`` that is in the envelope
+        but not in the signature.
+
     Returns
     -------
     tuple[dict, str]
@@ -58,6 +63,8 @@ def build_token_outer_envelope(
         "language": config.language,
         "reqTimestamp": req_timestamp,
     }
+    if user_type is not None:
+        sign_fields["userType"] = user_type
     sign = sha1_mixed(build_sign_string(sign_fields, sign_key))
 
     outer: dict[str, Any] = {

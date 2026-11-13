@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr
 
 from pybyd._crypto.hashing import md5_hex
 
@@ -40,6 +40,24 @@ class Session(BaseModel):
     encry_token: str
     created_at: float = Field(default_factory=time.monotonic)
     ttl: float = 12 * 3600
+
+    #: VIN -> whether this account reaches the car as a guest (a car shared
+    #: with it through "Family and friends"). Filled from the vehicle list
+    #: and corrected by the cloud's answers; see ``post_vehicle_json``.
+    _guest_vins: dict[str, bool] = PrivateAttr(default_factory=dict)
+    #: (VIN, endpoint) pairs whose refusal the other ``userType`` did not
+    #: fix, so a genuinely unsupported endpoint is not asked twice per poll.
+    _user_type_settled: set[tuple[str, str]] = PrivateAttr(default_factory=set)
+
+    @property
+    def guest_vins(self) -> dict[str, bool]:
+        """Mutable VIN -> guest map shared with the endpoint helpers."""
+        return self._guest_vins
+
+    @property
+    def user_type_settled(self) -> set[tuple[str, str]]:
+        """Mutable set of (VIN, endpoint) pairs not worth retrying."""
+        return self._user_type_settled
 
     def content_key(self) -> str:
         """AES key for encrypting/decrypting inner payload data.
