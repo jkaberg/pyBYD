@@ -570,7 +570,9 @@ class BydClient:
             self._MQTT_RECOVERY_BACKOFF_MAX_S,
         )
         delay *= random.uniform(0.8, 1.2)  # jitter: break lock-step ping-pong
-        if now - self._mqtt_recovery_last_at < delay:
+        # 0.0 means no attempt yet; monotonic() can be below the delay
+        # shortly after boot, which would read as inside the window
+        if self._mqtt_recovery_last_at and now - self._mqtt_recovery_last_at < delay:
             return  # still inside the backoff window
         self._mqtt_recovery_last_at = now
         self._mqtt_recovery_attempts += 1
