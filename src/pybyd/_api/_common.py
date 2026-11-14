@@ -5,6 +5,7 @@ This module centralizes the most repeated patterns:
 - posting a token-enveloped request
 - mapping common API error codes
 - decrypting + JSON-decoding respondData
+- declaring a guest account on the endpoints that reach the car
 
 It is internal to pyBYD and may change at any time.
 """
@@ -42,6 +43,17 @@ SERVICE_BUSY_CODES: frozenset[str] = frozenset({"1008"})
 
 #: Vehicle temporarily unreachable (deep sleep / offline) — retain last value.
 VEHICLE_UNREACHABLE_CODES: frozenset[str] = frozenset({"6002"})
+
+#: Outer ``userType`` sent by an account the car was shared with ("Family
+#: and friends"). The owner leaves the field out.
+USER_TYPE_GUEST = "1"
+
+#: What the cloud answers to a vehicle request sent with the wrong
+#: ``userType`` (BR cluster, 2026-11-12): a guest that does not declare
+#: itself gets the catch-all 1001, an owner that claims to be a guest gets
+#: 8003 ("Vehicle authorization invalid").
+GUEST_NOT_DECLARED_CODE = "1001"
+NOT_A_GUEST_CODE = "8003"
 
 
 def build_inner_base(
@@ -191,3 +203,87 @@ async def post_token_json(
         )
 
     return decode_respond_data(endpoint=endpoint, response=response, content_key=content_key)
+
+
+async def post_vehicle_json(
+    *,
+    endpoint: str,
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    inner: dict[str, str],
+    vin: str,
+    now_ms: int | None = None,
+    not_supported_codes: frozenset[str] | None = None,
+    extra_code_map: dict[frozenset[str], type[BydApiError]] | None = None,
+) -> Any:
+    """Post a request that reaches the car, with this account's ``userType`` on it.
+
+    Since 2026-11-12 the cloud refuses realtime, HVAC status, GPS and remote
+    control to a guest account (a car shared through "Family and friends")
+    that does not send a signed outer ``userType: "1"`` — with ``code=1001``,
+    while login, the vehicle list and the charging endpoints keep working.
+    An owner that sends the field is refused too (8003), and so is a guest
+    that sends it to ``/control/smartCharge/homePage`` (8002), so the field
+    is per endpoint and does not belong in :func:`post_token_json`.
+
+    ``session.guest_vins`` holds the first guess (from the vehicle list). The
+    answer corrects it: on the one code that means "wrong userType" the
+    request is sent once more the other way, and what worked is remembered.
+    If the cloud refuses it both ways the first error is raised, so a
+    genuinely unsupported endpoint still reads as ``1001`` — and is asked
+    only once per poll for the rest of the session.
+    """
+    guest = session.guest_vins.get(vin, False)
+    try:
+        return await post_token_json(
+            endpoint=endpoint,
+            config=config,
+            session=session,
+            transport=transport,
+            inner=inner,
+            now_ms=now_ms,
+            vin=vin,
+            not_supported_codes=not_supported_codes,
+            extra_code_map=extra_code_map,
+            user_type=USER_TYPE_GUEST if guest else None,
+        )
+    except BydSessionExpiredError:
+        raise
+    except BydApiError as first:
+        wrong_user_type = NOT_A_GUEST_CODE if guest else GUEST_NOT_DECLARED_CODE
+        if first.code != wrong_user_type or (vin, endpoint) in session.user_type_settled:
+            raise
+        # A request's random and timeStamp are single-use.
+        retry_ms = int(time.time() * 1000)
+        retry_inner = {**inner, "random": secrets.token_hex(16).upper(), "timeStamp": str(retry_ms)}
+        try:
+            decoded = await post_token_json(
+                endpoint=endpoint,
+                config=config,
+                session=session,
+                transport=transport,
+                inner=retry_inner,
+                now_ms=retry_ms,
+                vin=vin,
+                not_supported_codes=not_supported_codes,
+                extra_code_map=extra_code_map,
+                user_type=None if guest else USER_TYPE_GUEST,
+            )
+        except BydSessionExpiredError:
+            raise
+        except BydApiError as second:
+            refused_both_ways = NOT_A_GUEST_CODE if not guest else GUEST_NOT_DECLARED_CODE
+            if second.code == refused_both_ways:
+                # Not a userType problem after all: report what the cloud said
+                # first, and do not ask twice again during this session.
+                session.user_type_settled.add((vin, endpoint))
+                raise first from None
+            # Any other answer got past the userType check (car asleep, no
+            # GPS fix, wrong PIN...): the guess is corrected and this is the
+            # real answer.
+            session.guest_vins[vin] = not guest
+            raise
+        session.guest_vins[vin] = not guest
+        _logger.debug("userType corrected from response: endpoint=%s guest=%s", endpoint, not guest)
+        return decoded

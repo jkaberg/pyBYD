@@ -125,7 +125,8 @@ class PowerGear(BydEnum):
 class StearingWheelHeat(BydEnum):
     """Steering wheel heating state.
 
-    Status values: ``-1`` = on, ``1`` = off, ``0`` = no data.
+    Status values: ``-1`` = on, ``1`` = off, ``0`` = no data. Some models
+    (ATTO 3 EVO) report on as ``2`` instead, on the seat-heat scale.
     Command values use a different scale (see ``to_command_level``).
 
     ``ON`` occupies ``-1``, so unmapped values resolve to ``NO_DATA``
@@ -138,6 +139,8 @@ class StearingWheelHeat(BydEnum):
 
     @classmethod
     def _missing_(cls, value: object) -> StearingWheelHeat:
+        if value == 2:
+            return cls.ON
         return cls.NO_DATA
 
     def to_command_level(self) -> int:

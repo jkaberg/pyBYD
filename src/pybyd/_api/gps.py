@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_token_json
+from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_vehicle_json
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydDataUnavailableError
@@ -35,7 +35,7 @@ async def fetch_gps_endpoint(
 ) -> tuple[dict[str, Any], str | None]:
     """Fetch a single GPS endpoint, returning (gps_info_dict, next_serial)."""
     inner = build_inner_base(config, vin=vin, request_serial=request_serial)
-    decoded = await post_token_json(
+    decoded = await post_vehicle_json(
         endpoint=endpoint,
         config=config,
         session=session,

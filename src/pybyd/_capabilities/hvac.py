@@ -63,7 +63,7 @@ class HvacCapability:
                 endpoint="hvac",
             )
 
-    async def start(self, temperature: float = 21.0, duration: int = 20) -> None:
+    async def start(self, temperature: float = 21.0, duration: int = 20, cycle_mode: int = 2) -> None:
         """Start climate control.
 
         Parameters
@@ -73,10 +73,18 @@ class HvacCapability:
             range when it differs, eg 17-33 on the HAN).
         duration
             Run duration in minutes (10/15/20/25/30).
+        cycle_mode
+            Air source: ``1`` = fresh (outside) air, ``2`` = recirculate
+            (the BYD app's default).
         """
         self._ensure_available()
         time_span = minutes_to_time_span(duration)
-        params = ClimateStartParams(temperature=temperature, time_span=time_span, temp_offset=self.temp_offset)
+        params = ClimateStartParams(
+            temperature=temperature,
+            time_span=time_span,
+            temp_offset=self.temp_offset,
+            cycle_mode=cycle_mode,
+        )
         specs = [
             ProjectionSpec("hvac", "status", HvacOverallStatus.ON),
             ProjectionSpec("hvac", "main_setting_temp_new", temperature),

@@ -121,7 +121,7 @@ async def fetch_mqtt_bootstrap(
     )
 
 
-def decode_mqtt_payload(payload: bytes, decrypt_key_hex: str) -> tuple[dict[str, Any], str]:
+def decode_mqtt_payload(payload: bytes | bytearray, decrypt_key_hex: str) -> tuple[dict[str, Any], str]:
     """Decrypt and parse MQTT payload bytes into a JSON object.
 
     Returns

@@ -62,6 +62,9 @@ async def test_capability_uses_reported_range() -> None:
     assert cap.temp_range == (17.0, 33.0)
     await cap.start(temperature=33, duration=10)
     assert sent[-1].to_control_params_map()["mainSettingTemp"] == 17
+    assert sent[-1].cycle_mode == 2
+    await cap.start(temperature=21, duration=10, cycle_mode=1)
+    assert sent[-1].cycle_mode == 1
 
 
 async def test_newer_projection_replaces_older() -> None:
