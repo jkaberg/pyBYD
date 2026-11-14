@@ -1,6 +1,6 @@
-"""Message center (vehicle inbox) models.
+"""Message center (account inbox) models.
 
-``/app/messageCenter/getUnReadMessageList`` returns a bare LIST of
+``/app/messageCenter/getUnReadMessageList`` returns a bare list of
 messages (charging started/stopped, status alerts, ...), e.g.::
 
     [{"pushId": 211902416, "pushTime": 1790966443550, "messageGroup": 1,
@@ -8,8 +8,8 @@ messages (charging started/stopped, status alerts, ...), e.g.::
       "content": "2026-10-02 20:40,BYD ATTO 3 EVO El coche comience a cargar.",
       "jumpUrl": ""}]
 
-Observed on the EU host: no ``messageId`` / ``readStatus`` keys — the
-identifier is ``pushId``. Those alternative keys are still accepted.
+The EU host identifies messages by ``pushId``; ``messageId`` is accepted
+as a fallback.
 """
 
 from __future__ import annotations
@@ -25,29 +25,15 @@ from pybyd.models._base import BydBaseModel, BydTimestamp
 _LIST_KEYS: tuple[str, ...] = ("list", "messageList", "rows", "records")
 
 
-class MessageGroup(enum.IntEnum):
-    """Inbox message groups (the ``messageGroup`` request/response field)."""
+class NotificationCategory(enum.IntEnum):
+    """Inbox category, the value is the ``messageGroup`` sent to the API."""
 
     VEHICLE = 1
     SYSTEM = 2
 
 
-class NotificationCategory(enum.StrEnum):
-    """Inbox categories for individual owner accounts."""
-
-    VEHICLE = "vehicle"
-    SYSTEM = "system"
-
-
-#: Categories backed by a ``messageGroup`` on ``getUnReadMessageList``.
-CATEGORY_MESSAGE_GROUPS: dict[NotificationCategory, MessageGroup] = {
-    NotificationCategory.VEHICLE: MessageGroup.VEHICLE,
-    NotificationCategory.SYSTEM: MessageGroup.SYSTEM,
-}
-
-
 class VehicleMsgItemInfo(BydBaseModel):
-    """A single message from the vehicle inbox."""
+    """A single message from the account inbox."""
 
     message_id: int | str = Field(validation_alias=AliasChoices("pushId", "messageId"))
     title: str | None = Field(default=None, validation_alias=AliasChoices("title", "messageTitle"))
@@ -56,33 +42,19 @@ class VehicleMsgItemInfo(BydBaseModel):
     push_time: BydTimestamp = None
     message_group: int | None = None
     jump_url: str | None = None
-    read_status: int | None = Field(default=None, validation_alias=AliasChoices("readStatus", "isRead"))
-    create_time: BydTimestamp = None
-    message_type: str | None = None
-    vin: str | None = None
-    detail_url: str | None = None
 
     @field_validator("message_id", mode="before")
     @classmethod
     def _normalise_id(cls, value: Any) -> Any:
-        # Keep the existing numeric IDs while accepting opaque messageId values.
         if isinstance(value, str) and value.isdecimal():
             return int(value)
         return value
-
-    @property
-    def is_read(self) -> int | None:
-        """Read-state alias used by the detail response."""
-        return self.read_status
 
 
 class VehicleMsgListResponse(BydBaseModel):
     """Decoded response of ``/app/messageCenter/getUnReadMessageList``."""
 
     messages: list[VehicleMsgItemInfo] = Field(default_factory=list)
-    total: int | None = None
-    page: int | None = None
-    size: int | None = None
 
     @model_validator(mode="before")
     @classmethod

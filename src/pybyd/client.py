@@ -65,11 +65,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
-from pybyd.models.message_center import (
-    MessageGroup,
-    NotificationCategory,
-    VehicleMsgItemInfo,
-)
+from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import SmartChargingSchedule
@@ -561,7 +557,7 @@ class BydClient:
             return
         if self._mqtt_recovery_attempts >= self._MQTT_RECOVERY_MAX_ATTEMPTS:
             _logger.warning(
-                "MQTT recovery ceiling reached (%d attempts) — stopping push " "channel until the next login()",
+                "MQTT recovery ceiling reached (%d attempts) — stopping push channel until the next login()",
                 self._mqtt_recovery_attempts,
             )
             self._stop_mqtt()
@@ -1271,32 +1267,22 @@ class BydClient:
         """
         return await self._authed_call(_push_api.set_push_state, vin, enable=enable, push_type=push_type)
 
-    async def get_unread_vehicle_notifications(
-        self,
-        message_group: int = MessageGroup.VEHICLE,
-    ) -> list[VehicleMsgItemInfo]:
-        """Fetch the account's inbox messages (charging started/stopped, alerts, ...).
-
-        The endpoint is account-scoped (no VIN); messages name the car in
-        their ``content``.
-        """
-        response = await self._authed_call(_message_center_api.fetch_unread_messages, message_group)
-        return response.messages
-
     async def get_notifications(
         self,
         category: NotificationCategory = NotificationCategory.VEHICLE,
     ) -> list[VehicleMsgItemInfo]:
-        """Fetch the unread inbox messages of one category.
+        """Fetch the account's unread inbox messages of one category.
 
-        Fetching may consume unread messages; retain returned messages if
-        history is needed. This side effect needs further live verification.
+        The inbox is account-scoped (no VIN); vehicle messages name the car
+        in their ``content``. Whether fetching marks messages as read in the
+        official app is not verified, so callers that poll should keep track
+        of the ``message_id`` values they have already handled.
         """
         response = await self._authed_call(_message_center_api.fetch_notifications, category)
         return response.messages
 
     async def get_all_notifications(self) -> dict[NotificationCategory, list[VehicleMsgItemInfo]]:
-        """Fetch every owner-account inbox category."""
+        """Fetch the account's unread inbox messages of every category."""
         result: dict[NotificationCategory, list[VehicleMsgItemInfo]] = {}
         for category in NotificationCategory:
             result[category] = await self.get_notifications(category)
@@ -1609,7 +1595,7 @@ class BydClient:
         gate = evaluate_command_gate(RemoteCommand.START_CHARGE, capabilities, learn_info=learn_info)
         if not gate.supported:
             raise BydEndpointNotSupportedError(
-                (f"save_charging_schedule blocked for VIN {vin}: " f"gate={gate.gate_id} reason={gate.reason}"),
+                (f"save_charging_schedule blocked for VIN {vin}: gate={gate.gate_id} reason={gate.reason}"),
                 code="command_gate_blocked",
                 endpoint="/control/smartCharge/saveOrUpdate",
             )
@@ -1638,12 +1624,12 @@ class BydClient:
                 return result
             if res is None:
                 raise BydRemoteControlError(
-                    ("smartCharge saveOrUpdate timed out without a terminal " "result"),
+                    ("smartCharge saveOrUpdate timed out without a terminal result"),
                     code="timeout",
                     endpoint="/control/smartCharge/changeResult",
                 )
             raise BydRemoteControlError(
-                (f"smartCharge saveOrUpdate rejected by cloud (res={res}, " f"message={result.message!r})"),
+                (f"smartCharge saveOrUpdate rejected by cloud (res={res}, message={result.message!r})"),
                 code=str(res),
                 endpoint="/control/smartCharge/changeResult",
             )
@@ -1684,7 +1670,7 @@ class BydClient:
         gate = evaluate_command_gate(RemoteCommand.START_CHARGE, capabilities, learn_info=learn_info)
         if not gate.supported:
             raise BydEndpointNotSupportedError(
-                (f"start_charging blocked for VIN {vin}: " f"gate={gate.gate_id} reason={gate.reason}"),
+                (f"start_charging blocked for VIN {vin}: gate={gate.gate_id} reason={gate.reason}"),
                 code="command_gate_blocked",
                 endpoint="/control/smartCharge/changeChargeStatue",
             )

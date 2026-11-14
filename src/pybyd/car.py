@@ -43,7 +43,6 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities
-from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.vehicle import Vehicle
 
@@ -266,17 +265,6 @@ class BydCar:
         await self._engine.update_energy(data)
         return data
 
-    async def get_notifications(
-        self,
-        category: NotificationCategory = NotificationCategory.VEHICLE,
-    ) -> list[VehicleMsgItemInfo]:
-        """Fetch unread inbox messages of one category (account-scoped, see client)."""
-        return await self._client.get_notifications(category)
-
-    async def get_all_notifications(self) -> dict[NotificationCategory, list[VehicleMsgItemInfo]]:
-        """Fetch unread inbox messages of every supported category."""
-        return await self._client.get_all_notifications()
-
     async def save_charging_schedule(
         self,
         *,
@@ -397,7 +385,7 @@ class BydCar:
                 # Roll back the optimistic state and surface the error instead
                 # of painting a fake "success" that the next poll would undo.
                 _logger.debug(
-                    "Remote control not confirmed for vin=%s (cmd=%s) — " "rolling back projection and raising",
+                    "Remote control not confirmed for vin=%s (cmd=%s) — rolling back projection and raising",
                     self._vin,
                     command_id,
                 )

@@ -8,9 +8,9 @@ from typing import Any
 import pytest
 
 import pybyd._api.message_center as mc
-from pybyd._api.message_center import _UNREAD_ENDPOINT, fetch_unread_messages
+from pybyd._api.message_center import _UNREAD_ENDPOINT, fetch_notifications
 from pybyd.exceptions import BydApiError
-from pybyd.models.message_center import MessageGroup, VehicleMsgItemInfo, VehicleMsgListResponse
+from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo, VehicleMsgListResponse
 
 # Shape observed on the EU host (bare list, ``pushId`` identifier).
 _ITEMS: list[dict[str, Any]] = [
@@ -29,7 +29,6 @@ _ITEMS: list[dict[str, Any]] = [
         "content": "--",
         "pushTime": "1790966443",  # seconds, as string
         "messageGroup": "",
-        "readStatus": 1,
     },
 ]
 _EXPECTED_TIME = datetime.fromtimestamp(1790966443, tz=UTC)
@@ -45,9 +44,8 @@ def test_item_parses_camel_case_and_timestamps() -> None:
     assert first.title == "Empezar carga"
     assert first.title_id == 1
     assert first.push_time == _EXPECTED_TIME
-    assert first.message_group == MessageGroup.VEHICLE
+    assert first.message_group == NotificationCategory.VEHICLE
     assert first.jump_url is None  # "" sentinel stripped
-    assert first.read_status is None
     assert first.raw["pushId"] == 211902416
 
     second = VehicleMsgItemInfo.model_validate(_ITEMS[1])
@@ -56,7 +54,6 @@ def test_item_parses_camel_case_and_timestamps() -> None:
     assert second.content is None  # "--" sentinel stripped
     assert second.message_group is None
     assert second.push_time == _EXPECTED_TIME
-    assert second.read_status == 1
 
 
 def test_response_accepts_bare_list() -> None:
@@ -85,13 +82,13 @@ async def test_fetch_sends_message_group_without_vin(monkeypatch: pytest.MonkeyP
         return _ITEMS
 
     monkeypatch.setattr(mc, "post_token_json", _fake_post)
-    resp = await fetch_unread_messages(None, None, None)  # type: ignore[arg-type]
+    resp = await fetch_notifications(None, None, None)  # type: ignore[arg-type]
     assert seen["endpoint"] == _UNREAD_ENDPOINT
     assert seen["inner"] == {"messageGroup": "1"}
     assert "vin" not in seen["inner"]
     assert len(resp.messages) == 2
 
-    await fetch_unread_messages(None, None, None, MessageGroup.SYSTEM)  # type: ignore[arg-type]
+    await fetch_notifications(None, None, None, NotificationCategory.SYSTEM)  # type: ignore[arg-type]
     assert seen["inner"]["messageGroup"] == "2"
 
 
@@ -106,7 +103,7 @@ async def test_fetch_handles_unexpected_shape(monkeypatch: pytest.MonkeyPatch) -
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        await fetch_unread_messages(None, None, None)  # type: ignore[arg-type]
+        await fetch_notifications(None, None, None)  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio
@@ -118,18 +115,19 @@ async def test_fetch_propagates_api_error(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(mc, "post_token_json", _fake_post)
     with pytest.raises(BydApiError):
-        await fetch_unread_messages(None, None, None)  # type: ignore[arg-type]
+        await fetch_notifications(None, None, None)  # type: ignore[arg-type]
 
 
 # ── NotificationCategory ────────────────────────────────────
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(("category", "group"), [("vehicle", "1"), ("system", "2")])
-async def test_category_maps_to_message_group(monkeypatch: pytest.MonkeyPatch, category: str, group: str) -> None:
-    from pybyd._api.message_center import fetch_notifications
-    from pybyd.models.message_center import NotificationCategory
-
+@pytest.mark.parametrize(
+    ("category", "group"), [(NotificationCategory.VEHICLE, "1"), (NotificationCategory.SYSTEM, "2")]
+)
+async def test_category_maps_to_message_group(
+    monkeypatch: pytest.MonkeyPatch, category: NotificationCategory, group: str
+) -> None:
     monkeypatch.setattr(mc, "build_inner_base", lambda *a, **k: dict(k))
     seen: dict[str, Any] = {}
 
@@ -138,7 +136,7 @@ async def test_category_maps_to_message_group(monkeypatch: pytest.MonkeyPatch, c
         return _ITEMS[:1]
 
     monkeypatch.setattr(mc, "post_token_json", _fake_post)
-    resp = await fetch_notifications(None, None, None, NotificationCategory(category))  # type: ignore[arg-type]
+    resp = await fetch_notifications(None, None, None, category)  # type: ignore[arg-type]
     assert seen["inner"]["messageGroup"] == group
     assert len(resp.messages) == 1
 
@@ -146,7 +144,6 @@ async def test_category_maps_to_message_group(monkeypatch: pytest.MonkeyPatch, c
 @pytest.mark.asyncio
 async def test_client_get_all_notifications(monkeypatch: pytest.MonkeyPatch) -> None:
     from pybyd.client import BydClient
-    from pybyd.models.message_center import NotificationCategory
 
     async def _fake_get(self: Any, category: NotificationCategory) -> list[VehicleMsgItemInfo]:
         return [VehicleMsgItemInfo.model_validate(_ITEMS[0])]
