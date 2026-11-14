@@ -1740,36 +1740,118 @@ class BydClient:
         poll_attempts: int = 6,
         poll_interval: float = 2.0,
     ) -> ChargeChangeResult:
-        """Not supported: the BYD cloud has no working stop-charge command.
+        """Stop an active charging session.
 
-        .. warning::
-           ``/control/smartCharge/changeChargeStatue`` with ``status: "0"``
-           is a **verified no-op** — ``changeResult`` returns
-           ``res: 2 "Operation successful"`` but the vehicle keeps charging
-           (live-tested; see ``references/changeChargeStatue.md``). The BYD
-           app has no in-app stop-charge action either; the only way to stop
-           an active charge is the key-fob / door-handle double-unlock, a
-           physical/CAN path with no cloud equivalent.
+        Gates on ``functionNo "1012"`` and learned vehicle support
+        (``bookingCharge`` in ``vehicleFunLearnInfo``) — raises
+        :class:`BydEndpointNotSupportedError` when unsupported.
 
-        This method therefore raises immediately instead of issuing the
-        request and reporting a false success. The ``mqtt_timeout`` /
-        ``poll_attempts`` / ``poll_interval`` parameters are retained only
-        to keep the signature symmetric with :meth:`start_charging`.
-
-        Raises
-        ------
-        BydEndpointNotSupportedError
-            Always — the cloud cannot stop an active charge.
+        Routes through :meth:`_trigger_and_poll`: triggers
+        ``/control/smartCharge/stopChargeControl``, then awaits the MQTT
+        push or polls ``/control/smartCharge/changeResult``.
         """
-        raise BydEndpointNotSupportedError(
-            "stop_charging is not supported: the BYD cloud "
-            "changeChargeStatue status='0' is a verified no-op (returns "
-            "success but does not stop an active charge). Stop an active "
-            "charge with the key-fob/door-handle double-unlock instead. "
-            "See references/changeChargeStatue.md.",
-            code="cloud_stop_unsupported",
-            endpoint="/control/smartCharge/changeChargeStatue",
-        )
+        capabilities = await self.get_vehicle_capabilities(vin)
+        learn_info = await self._vehicle_fun_learn_info_for(vin)
+        gate = evaluate_command_gate(RemoteCommand.STOP_CHARGE, capabilities, learn_info=learn_info)
+        if not gate.supported:
+            raise BydEndpointNotSupportedError(
+                (f"stop_charging blocked for VIN {vin}: " f"gate={gate.gate_id} reason={gate.reason}"),
+                code="command_gate_blocked",
+                endpoint="/control/smartCharge/stopChargeControl",
+            )
+
+        async def _call() -> ChargeChangeResult:
+            result = await self._trigger_and_poll(
+                vin=vin,
+                trigger_endpoint="/control/smartCharge/stopChargeControl",
+                poll_endpoint="/control/smartCharge/changeResult",
+                fetch_fn=_smart_api.make_charge_control_fetch_fn(_smart_api.trigger_stop_charge),
+                is_ready=_smart_api.is_charge_change_ready,
+                model_cls=ChargeChangeResult,
+                label="ChargeStop",
+                mqtt_event_type="smartCharge",
+                mqtt_timeout=mqtt_timeout,
+                poll_attempts=poll_attempts,
+                poll_interval=poll_interval,
+            )
+            res = result.res
+            if res == 2:
+                return result
+            if res is None:
+                raise BydRemoteControlError(
+                    "smartCharge stopChargeControl timed out without a terminal result",
+                    code="timeout",
+                    endpoint="/control/smartCharge/changeResult",
+                )
+            raise BydRemoteControlError(
+                f"smartCharge stopChargeControl unexpected res={res} message={result.message}",
+                code=str(res),
+                endpoint="/control/smartCharge/changeResult",
+            )
+
+        return await self._call_with_reauth(_call)
+
+    async def continue_charging(
+        self,
+        vin: str,
+        *,
+        mqtt_timeout: float | None = None,
+        poll_attempts: int = 6,
+        poll_interval: float = 2.0,
+    ) -> ChargeChangeResult:
+        """Resume a paused charging session via ``/control/smartCharge/continueChargeControl``."""
+        capabilities = await self.get_vehicle_capabilities(vin)
+        learn_info = await self._vehicle_fun_learn_info_for(vin)
+        gate = evaluate_command_gate(RemoteCommand.START_CHARGE, capabilities, learn_info=learn_info)
+        if not gate.supported:
+            raise BydEndpointNotSupportedError(
+                (f"continue_charging blocked for VIN {vin}: " f"gate={gate.gate_id} reason={gate.reason}"),
+                code="command_gate_blocked",
+                endpoint="/control/smartCharge/continueChargeControl",
+            )
+
+        async def _call() -> ChargeChangeResult:
+            result = await self._trigger_and_poll(
+                vin=vin,
+                trigger_endpoint="/control/smartCharge/continueChargeControl",
+                poll_endpoint="/control/smartCharge/changeResult",
+                fetch_fn=_smart_api.make_charge_control_fetch_fn(_smart_api.trigger_continue_charge),
+                is_ready=_smart_api.is_charge_change_ready,
+                model_cls=ChargeChangeResult,
+                label="ChargeContinue",
+                mqtt_event_type="smartCharge",
+                mqtt_timeout=mqtt_timeout,
+                poll_attempts=poll_attempts,
+                poll_interval=poll_interval,
+            )
+            res = result.res
+            if res == 2:
+                return result
+            if res is None:
+                raise BydRemoteControlError(
+                    "smartCharge continueChargeControl timed out without a terminal result",
+                    code="timeout",
+                    endpoint="/control/smartCharge/changeResult",
+                )
+            raise BydRemoteControlError(
+                f"smartCharge continueChargeControl unexpected res={res} message={result.message}",
+                code=str(res),
+                endpoint="/control/smartCharge/changeResult",
+            )
+
+        return await self._call_with_reauth(_call)
+
+    async def set_charge_soc_limit(self, vin: str, *, soc_limit: int) -> CommandAck:
+        """Set vehicle charge SoC limit percentage via ``/control/smartCharge/chargeSocLimit``."""
+        return await self._authed_call(_smart_api.set_charge_soc_limit, vin, soc_limit=soc_limit)
+
+    async def get_ac_current_limit(self, vin: str, *, energy_type: str = "0") -> dict[str, Any]:
+        """Query supported and current AC charge current limits."""
+        return await self._authed_call(_smart_api.fetch_ac_current_limit, vin, energy_type=energy_type)
+
+    async def set_ac_current_limit(self, vin: str, *, limit_value: str) -> CommandAck:
+        """Set AC charge current limit (e.g. '6', '8', '10', '16', '32')."""
+        return await self._authed_call(_smart_api.trigger_set_ac_current_limit, vin, limit_value=limit_value)
 
     async def rename_vehicle(self, vin: str, *, name: str) -> CommandAck:
         """Rename a vehicle."""

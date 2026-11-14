@@ -199,3 +199,32 @@ class TestEvaluateCommandGatePublicSurface:
             _caps_with(["1026"]),
         )
         assert verdict.supported is True
+
+    def test_stop_charge_blocked_when_booking_charge_off(self):
+        """The STOP_CHARGE rule rejects when bookingCharge is 0 or missing."""
+        verdict = evaluate_command_gate(
+            RemoteCommand.STOP_CHARGE,
+            _caps_with(["1012"]),
+            learn_info={"bookingCharge": 0},
+        )
+        assert verdict.supported is False
+        assert verdict.reason == "learn_info_missing"
+
+    @pytest.mark.parametrize("booking_charge", [4, 5])
+    def test_stop_charge_allowed_when_booking_charge_supported(self, booking_charge: int):
+        """The STOP_CHARGE rule accepts when bookingCharge is positive (4 for PHEV, 5 for BEV)."""
+        verdict = evaluate_command_gate(
+            RemoteCommand.STOP_CHARGE,
+            _caps_with(["1012"]),
+            learn_info={"bookingCharge": booking_charge},
+        )
+        assert verdict.supported is True
+        assert verdict.reason == "supported"
+
+    def test_stop_charge_backward_compat_without_learn_info(self):
+        """Without learn_info, STOP_CHARGE falls back to 1012 check only."""
+        verdict = evaluate_command_gate(
+            RemoteCommand.STOP_CHARGE,
+            _caps_with(["1012"]),
+        )
+        assert verdict.supported is True

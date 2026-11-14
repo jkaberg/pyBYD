@@ -541,6 +541,32 @@ class VehicleRealtimeData(BydBaseModel):
     """Scheduled charge start hour."""
     booking_charging_minute: int | None = None
     """Scheduled charge start minute."""
+    charge_power: str | None = None
+    """Instantaneous charge power (e.g. '6.9', '11.0')."""
+    charge_power_unit: str | None = None
+    """Unit for charge_power (e.g. 'kW')."""
+    charge_end_hour: int | None = None
+    """Estimated target completion hour."""
+    charge_end_minute: int | None = None
+    """Estimated target completion minute."""
+    charge_start_time_hour: int | None = None
+    """Scheduled charge start hour (alternate / app field)."""
+    charge_start_time_min: int | None = None
+    """Scheduled charge start minute (alternate / app field)."""
+    smart_charge_state: int | None = None
+    """Smart charging state indicator."""
+    safe_charge: bool | None = None
+    """Ground / safe charging verification indicator."""
+    flash_charge_state: int | None = None
+    """DC fast charging state."""
+    flash_charge_config: int | None = None
+    """DC fast charging configuration flag."""
+    booking_departure_state: int | None = None
+    """Scheduled departure climate state."""
+    booking_departure_hour: int | None = None
+    """Scheduled departure hour."""
+    booking_departure_minute: int | None = None
+    """Scheduled departure minute."""
 
     # --- Doors ---
     left_front_door: DoorOpenState | None = None

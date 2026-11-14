@@ -185,11 +185,13 @@ _COMMAND_GATE_RULES: tuple[CommandGateRule, ...] = (
     ),
     CommandGateRule.model_validate(
         {
-            # Stopping uses the same `RESERVATIONCHARGING` (`1012`) capability
-            # as starting — the changeChargeStatue toggle with ``status: "0"``.
+            # Stopping requires `RESERVATIONCHARGING` (`1012`) and learned
+            # support signaled by ``bookingCharge`` in ``vehicleFunLearnInfo``
+            # (5 on BEVs, 4 on PHEVs per official app CarConfigRepository.M0).
             "gateId": "stop_charge",
             "command": RemoteCommand.STOP_CHARGE,
             "requiredFunctionNos": ["1012"],
+            "requiredLearnInfoKeys": ["bookingCharge"],
         }
     ),
 )

@@ -29,6 +29,11 @@ from pybyd.session import Session
 _TOGGLE_ENDPOINT = "/control/smartCharge/changeChargeStatue"
 _RESULT_ENDPOINT = "/control/smartCharge/changeResult"
 _SAVE_ENDPOINT = "/control/smartCharge/saveOrUpdate"
+_STOP_ENDPOINT = "/control/smartCharge/stopChargeControl"
+_CONTINUE_ENDPOINT = "/control/smartCharge/continueChargeControl"
+_SOC_LIMIT_ENDPOINT = "/control/smartCharge/chargeSocLimit"
+_GET_AC_LIMIT_ENDPOINT = "/control/smartCharge/getAcCurrentLimit"
+_SET_AC_LIMIT_ENDPOINT = "/control/smartCharge/limitCurrentControl"
 
 #: Cloud error codes meaning the cloud accepted the request but couldn't
 #: reach the vehicle right now (weak cellular signal, vehicle parked
@@ -189,6 +194,26 @@ def make_change_charge_fetch_fn(*, start: bool) -> Callable[..., Awaitable[tuple
     return _fetch
 
 
+def make_charge_control_fetch_fn(
+    trigger: Callable[..., Awaitable[tuple[dict[str, Any], str | None]]],
+) -> Callable[..., Awaitable[tuple[dict[str, Any], str | None]]]:
+    """Adapter for a charge-control trigger polled through ``changeResult``."""
+
+    async def _fetch(
+        endpoint: str,
+        config: BydConfig,
+        session: Session,
+        transport: Transport,
+        vin: str,
+        request_serial: str | None = None,
+    ) -> tuple[dict[str, Any], str | None]:
+        if endpoint == _RESULT_ENDPOINT:
+            return await poll_charge_result(config, session, transport, vin, request_serial or "")
+        return await trigger(config, session, transport, vin)
+
+    return _fetch
+
+
 def make_save_charging_schedule_fetch_fn(
     *,
     start_charge_time: str,
@@ -300,3 +325,122 @@ async def trigger_save_charging_schedule(
     )
     raw = decoded if isinstance(decoded, dict) else {}
     return raw, raw.get("requestSerial")
+
+
+async def trigger_stop_charge(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+) -> tuple[dict[str, Any], str | None]:
+    """POST ``/control/smartCharge/stopChargeControl`` to stop an active charge.
+
+    Returns ``(raw_response, request_serial)``.
+    """
+    inner = build_inner_base(config, vin=vin)
+    decoded = await post_token_json(
+        endpoint=_STOP_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    raw = decoded if isinstance(decoded, dict) else {}
+    return raw, raw.get("requestSerial")
+
+
+async def trigger_continue_charge(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+) -> tuple[dict[str, Any], str | None]:
+    """POST ``/control/smartCharge/continueChargeControl`` to resume charging.
+
+    Returns ``(raw_response, request_serial)``.
+    """
+    inner = build_inner_base(config, vin=vin)
+    decoded = await post_token_json(
+        endpoint=_CONTINUE_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    raw = decoded if isinstance(decoded, dict) else {}
+    return raw, raw.get("requestSerial")
+
+
+async def set_charge_soc_limit(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    *,
+    soc_limit: int,
+) -> CommandAck:
+    """POST ``/control/smartCharge/chargeSocLimit`` to set target SoC limit."""
+    inner: dict[str, Any] = build_inner_base(config, vin=vin)
+    inner["chargeSocLimit"] = soc_limit
+    decoded = await post_token_json(
+        endpoint=_SOC_LIMIT_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    raw = decoded if isinstance(decoded, dict) else {}
+    return CommandAck.model_validate({"vin": vin, **raw, "raw": raw})
+
+
+async def fetch_ac_current_limit(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    *,
+    energy_type: str = "0",
+) -> dict[str, Any]:
+    """POST ``/control/smartCharge/getAcCurrentLimit`` to query AC current limits."""
+    inner = build_inner_base(config, vin=vin)
+    inner["energyType"] = energy_type
+    decoded = await post_token_json(
+        endpoint=_GET_AC_LIMIT_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    return decoded if isinstance(decoded, dict) else {}
+
+
+async def trigger_set_ac_current_limit(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    *,
+    limit_value: str,
+) -> CommandAck:
+    """POST ``/control/smartCharge/limitCurrentControl`` to set AC current limit."""
+    inner = build_inner_base(config, vin=vin)
+    inner["limitCurrentValue"] = str(limit_value)
+    decoded = await post_token_json(
+        endpoint=_SET_AC_LIMIT_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    raw = decoded if isinstance(decoded, dict) else {}
+    return CommandAck.model_validate({"vin": vin, **raw, "raw": raw})

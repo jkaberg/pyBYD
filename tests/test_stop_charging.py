@@ -1,21 +1,16 @@
-"""Tests for stop_charging.
+"""Tests for stop_charging and continue_charging.
 
-The BYD cloud has no working stop-charge command: the
-``changeChargeStatue`` ``status: "0"`` path is a verified no-op (returns
-``res: 2 "Operation successful"`` while the vehicle keeps charging — see
-``references/changeChargeStatue.md``). ``BydClient.stop_charging`` therefore
-raises instead of reporting a false success.
-
-The ``STOP_CHARGE`` enum member and gate rule are retained as metadata (the
-command type exists in BYD's catalogue) and are still exercised here.
+Both go through dedicated endpoints and are polled via ``changeResult``.
 """
 
 from __future__ import annotations
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
 
 from pybyd.client import BydClient
-from pybyd.exceptions import BydEndpointNotSupportedError
+from pybyd.config import BydConfig
 from pybyd.models.command_gating import evaluate_command_gate
 from pybyd.models.control import RemoteCommand
 from pybyd.models.latest_config import VehicleCapabilities
@@ -46,16 +41,25 @@ def test_stop_charge_gate_present_and_mirrors_start() -> None:
     assert evaluate_command_gate(RemoteCommand.STOP_CHARGE, caps_no).supported is False
 
 
-@pytest.mark.asyncio
-async def test_stop_charging_raises_unsupported() -> None:
-    """stop_charging refuses rather than issuing the known no-op request.
+@pytest.mark.parametrize(
+    ("method", "endpoint"),
+    [
+        ("stop_charging", "/control/smartCharge/stopChargeControl"),
+        ("continue_charging", "/control/smartCharge/continueChargeControl"),
+    ],
+)
+async def test_charge_control_posts_to_dedicated_endpoint(
+    monkeypatch: pytest.MonkeyPatch, method: str, endpoint: str
+) -> None:
+    client = BydClient(BydConfig(username="test@example.com", password="unused"))
+    monkeypatch.setattr(client, "get_vehicle_capabilities", AsyncMock(return_value=_caps_with(["1012"])))
+    monkeypatch.setattr(client, "_vehicle_fun_learn_info_for", AsyncMock(return_value={"bookingCharge": 5}))
+    monkeypatch.setattr(client, "ensure_session", AsyncMock(return_value=object()))
+    monkeypatch.setattr(client, "_require_transport", MagicMock(return_value=object()))
+    post = AsyncMock(return_value={"res": 2})
+    monkeypatch.setattr("pybyd._api.smart_charging.post_token_json", post)
 
-    It must raise BEFORE any network/session work, so calling it on a bare
-    client instance (no session) still raises the unsupported error.
-    """
-    client = BydClient.__new__(BydClient)  # no __init__: prove no I/O happens
-    with pytest.raises(BydEndpointNotSupportedError) as exc_info:
-        await client.stop_charging("TEST" + "X" * 13)
+    result = await getattr(client, method)("TEST" + "X" * 13, mqtt_timeout=0, poll_attempts=1, poll_interval=0)
 
-    assert exc_info.value.code == "cloud_stop_unsupported"
-    assert "no-op" in str(exc_info.value).lower()
+    assert result.res == 2
+    assert post.await_args_list[0].kwargs["endpoint"] == endpoint
