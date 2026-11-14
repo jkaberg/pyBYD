@@ -385,7 +385,7 @@ class BydCar:
                 # Roll back the optimistic state and surface the error instead
                 # of painting a fake "success" that the next poll would undo.
                 _logger.debug(
-                    "Remote control not confirmed for vin=%s (cmd=%s) — " "rolling back projection and raising",
+                    "Remote control not confirmed for vin=%s (cmd=%s) — rolling back projection and raising",
                     self._vin,
                     command_id,
                 )

@@ -96,6 +96,19 @@ await car.update_realtime()
 print(car.state.realtime)
 ```
 
+## Account inbox
+
+Unread messages from the app's inbox (charging started/stopped, alerts). The inbox belongs to the account, not to a car:
+
+```python
+from pybyd import NotificationCategory
+
+for message in await client.get_notifications(NotificationCategory.VEHICLE):
+    print(message.push_time, message.title, message.content)
+```
+
+`NotificationCategory.SYSTEM` selects system messages. It's not verified whether fetching marks messages as read in the official app.
+
 ## MQTT and command completion
 
 When MQTT is enabled (default), command completion is MQTT-first with HTTP fallback:

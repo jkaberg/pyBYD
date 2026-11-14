@@ -24,6 +24,11 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus, celsius_to_scale
 from pybyd.models.latest_config import LatestConfigFunction, VehicleCapabilities, VehicleLatestConfig
+from pybyd.models.message_center import (
+    NotificationCategory,
+    VehicleMsgItemInfo,
+    VehicleMsgListResponse,
+)
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import (
     AirCirculationMode,
@@ -88,6 +93,9 @@ __all__ = [
     "VehicleCapabilities",
     "Vehicle",
     "VehicleLatestConfig",
+    "NotificationCategory",
+    "VehicleMsgItemInfo",
+    "VehicleMsgListResponse",
     "VehicleRealtimeData",
     "VehicleState",
     "VerifyControlPasswordResponse",
