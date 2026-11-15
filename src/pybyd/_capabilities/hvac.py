@@ -8,8 +8,8 @@ from pybyd._constants import DEFAULT_TEMP_OFFSET_C, minutes_to_time_span
 from pybyd._state_engine import ProjectionSpec
 from pybyd.exceptions import BydEndpointNotSupportedError
 from pybyd.models.control import ClimateScheduleParams, ClimateStartParams
-from pybyd.models.hvac import HvacOverallStatus
-from pybyd.models.realtime import SeatHeatVentState, StearingWheelHeat
+from pybyd.models.hvac import HvacOverallStatus, HvacWindPosition
+from pybyd.models.realtime import AirCirculationMode, SeatHeatVentState, StearingWheelHeat
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -63,8 +63,14 @@ class HvacCapability:
                 endpoint="hvac",
             )
 
-    async def start(self, temperature: float = 21.0, duration: int = 20, cycle_mode: int = 2) -> None:
-        """Start climate control.
+    async def start(
+        self,
+        temperature: float = 21.0,
+        duration: int = 20,
+        cycle_mode: int | None = None,
+        fan_level: int | None = None,
+    ) -> None:
+        """Start climate control, or change the settings of a running session.
 
         Parameters
         ----------
@@ -74,21 +80,42 @@ class HvacCapability:
         duration
             Run duration in minutes (10/15/20/25/30).
         cycle_mode
-            Air source: ``1`` = fresh (outside) air, ``2`` = recirculate
-            (the BYD app's default).
+            Air source: ``1`` = fresh (outside) air, ``2`` = recirculate.
+            ``None`` keeps the current setting while climate is running,
+            otherwise recirculate (the BYD app's default).
+        fan_level
+            Fan speed ``1``-``7``.  ``None`` keeps the current speed while
+            climate is running, otherwise lets the car pick.
         """
         self._ensure_available()
+        if fan_level is not None and not 1 <= fan_level <= 7:
+            raise ValueError(f"fan_level must be 1-7, got {fan_level}")
         time_span = minutes_to_time_span(duration)
+
+        # OPENAIR resends every setting, so a setpoint change on a running
+        # session would otherwise reset recirculation and fan speed (#64).
+        hvac = self._get_state().hvac if self._get_state is not None else None
+        if hvac is not None and hvac.status == HvacOverallStatus.ON:
+            if cycle_mode is None and hvac.cycle_choice in (AirCirculationMode.EXTERNAL, AirCirculationMode.INTERNAL):
+                cycle_mode = int(hvac.cycle_choice)
+            if fan_level is None and hvac.wind_position is not None and 1 <= int(hvac.wind_position) <= 7:
+                fan_level = int(hvac.wind_position)
+        if cycle_mode is None:
+            cycle_mode = 2
+
         params = ClimateStartParams(
             temperature=temperature,
             time_span=time_span,
             temp_offset=self.temp_offset,
             cycle_mode=cycle_mode,
+            wind_level=fan_level,
         )
         specs = [
             ProjectionSpec("hvac", "status", HvacOverallStatus.ON),
             ProjectionSpec("hvac", "main_setting_temp_new", temperature),
         ]
+        if fan_level is not None:
+            specs.append(ProjectionSpec("hvac", "wind_position", HvacWindPosition(fan_level)))
 
         async def _cmd() -> Any:
             return await self._start_fn(self._vin, params=params)
