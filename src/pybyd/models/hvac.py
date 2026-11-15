@@ -46,7 +46,7 @@ class AirConditioningMode(BydEnum):
 
 
 class HvacWindMode(BydEnum):
-    """Fan mode / airflow direction."""
+    """Airflow direction (which vents blow)."""
 
     UNKNOWN = -1
     OFF = 0
@@ -58,7 +58,7 @@ class HvacWindMode(BydEnum):
 
 
 class HvacWindPosition(BydEnum):
-    """Fan speed / airflow position."""
+    """Fan speed, 1 (lowest) to 7 (highest)."""
 
     UNKNOWN = -1
     OFF = 0
@@ -91,9 +91,9 @@ class HvacStatus(BydBaseModel):
     air_conditioning_mode: AirConditioningMode | None = None
     """A/C mode (auto / manual)."""
     wind_mode: HvacWindMode | None = None
-    """Fan mode / airflow direction."""
+    """Airflow direction."""
     wind_position: HvacWindPosition | None = None
-    """Fan speed / airflow position."""
+    """Fan speed (1-7)."""
     cycle_choice: AirCirculationMode | None = None
     """Air circulation mode (external / internal)."""
 
