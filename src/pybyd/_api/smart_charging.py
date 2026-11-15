@@ -2,6 +2,7 @@
 
 Endpoints:
   - /control/smartCharge/homePage            (read schedule + live SoC)
+  - /control/smartCharge/getAcCurrentLimit   (read supported and active AC current limits)
   - /control/smartCharge/changeChargeStatue  (toggle on/off, or start/stop charge)
   - /control/smartCharge/changeResult        (poll until status change settles)
   - /control/smartCharge/saveOrUpdate        (save schedule)
@@ -23,12 +24,14 @@ from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydDataUnavailableError
 from pybyd.models.control import CommandAck
-from pybyd.models.smart_charging import SmartChargingSchedule
+from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
+from pybyd.models.vehicle import EnergyType
 from pybyd.session import Session
 
 _TOGGLE_ENDPOINT = "/control/smartCharge/changeChargeStatue"
 _RESULT_ENDPOINT = "/control/smartCharge/changeResult"
 _SAVE_ENDPOINT = "/control/smartCharge/saveOrUpdate"
+_GET_AC_LIMIT_ENDPOINT = "/control/smartCharge/getAcCurrentLimit"
 
 #: Cloud error codes meaning the cloud accepted the request but couldn't
 #: reach the vehicle right now (weak cellular signal, vehicle parked
@@ -300,3 +303,27 @@ async def trigger_save_charging_schedule(
     )
     raw = decoded if isinstance(decoded, dict) else {}
     return raw, raw.get("requestSerial")
+
+
+async def fetch_ac_current_limit(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    *,
+    energy_type: EnergyType | int | str = EnergyType.EV,
+) -> AcCurrentLimit:
+    """POST ``/control/smartCharge/getAcCurrentLimit`` to query AC current limits."""
+    inner = build_inner_base(config, vin=vin)
+    inner["energyType"] = str(int(energy_type)) if isinstance(energy_type, int) else str(energy_type)
+    decoded = await post_token_json(
+        endpoint=_GET_AC_LIMIT_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    raw = decoded if isinstance(decoded, dict) else {}
+    return AcCurrentLimit.model_validate({"vin": vin, **raw})

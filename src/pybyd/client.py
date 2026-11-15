@@ -68,7 +68,7 @@ from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
 from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
-from pybyd.models.smart_charging import SmartChargingSchedule
+from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
 from pybyd.models.vehicle import EnergyType, Vehicle
 from pybyd.session import Session
 
@@ -1248,6 +1248,20 @@ class BydClient:
         status = ChargingStatus.model_validate(raw)
         schedule = SmartChargingSchedule.model_validate({"vin": vin, **raw})
         return status, schedule
+
+    async def get_ac_current_limit(
+        self,
+        vin: str,
+        *,
+        energy_type: EnergyType | int | str | None = None,
+    ) -> AcCurrentLimit:
+        """Fetch supported and active AC charging current limits."""
+        resolved_energy_type = await self._energy_type_for(vin) if energy_type is None else energy_type
+        return await self._authed_call(
+            _smart_api.fetch_ac_current_limit,
+            vin,
+            energy_type=resolved_energy_type,
+        )
 
     async def get_energy_consumption(self, vin: str) -> EnergyConsumption:
         """Fetch energy consumption data.

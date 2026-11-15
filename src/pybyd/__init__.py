@@ -22,6 +22,7 @@ from pybyd.exceptions import (
 )
 from pybyd.models import (
     VALID_CLIMATE_DURATIONS,
+    AcCurrentLimit,
     ChargingStatus,
     CommandAckEvent,
     CommandLifecycleEvent,
@@ -49,6 +50,7 @@ except PackageNotFoundError:
 
 __all__ = [
     "__version__",
+    "AcCurrentLimit",
     "BydApiError",
     "BydAuthenticationError",
     "BydCar",

@@ -24,7 +24,7 @@ from __future__ import annotations
 from datetime import time
 from typing import Annotated, Any, ClassVar
 
-from pydantic import BeforeValidator, model_validator
+from pydantic import BeforeValidator, Field, model_validator
 
 from pybyd.models._base import BydBaseModel, BydTimestamp
 
@@ -197,3 +197,37 @@ class SmartChargingSchedule(BydBaseModel):
         return (self.charge is not None and self.charge.is_enabled) or (
             self.journey is not None and self.journey.is_enabled
         )
+
+
+def _parse_limit_list(value: Any) -> list[str]:
+    """Coerce ``currentLimitList`` items to non-empty strings."""
+    if not isinstance(value, list):
+        return []
+    result: list[str] = []
+    for item in value:
+        if item is None:
+            continue
+        text = str(item).strip()
+        if text:
+            result.append(text)
+    return result
+
+
+def _parse_limit_str(value: Any) -> str | None:
+    """Coerce ``currentEvCurrentLimit`` to a non-empty string or ``None``."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+_LimitList = Annotated[list[str], BeforeValidator(_parse_limit_list)]
+_LimitStr = Annotated[str | None, BeforeValidator(_parse_limit_str)]
+
+
+class AcCurrentLimit(BydBaseModel):
+    """Supported and active AC charging current limits from ``/control/smartCharge/getAcCurrentLimit``."""
+
+    vin: str = ""
+    current_ev_current_limit: _LimitStr = None
+    current_limit_list: _LimitList = Field(default_factory=list)
