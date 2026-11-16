@@ -39,7 +39,7 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     FeatureSpec("unlock", "Unlock doors", ("1006",), "command"),
     FeatureSpec("climate", "Climate (HVAC)", ("1001", "10300001", "1015"), "command"),
     FeatureSpec("car_on", "Car on / one-tap prep", ("1001", "10300001", "1015"), "command"),
-    FeatureSpec("battery_heat", "Battery heating", ("10300002",), "command"),
+    FeatureSpec("battery_heat", "Battery heating", ("10300002", "10100001"), "command"),
     FeatureSpec("steering_wheel_heat", "Steering-wheel heat", ("10030010", "10300004"), "command"),
     FeatureSpec("driver_seat_heat", "Driver seat heat", ("10030002", "10300003"), "command"),
     FeatureSpec("driver_seat_ventilation", "Driver seat ventilation", ("10030001", "10300003"), "command"),
@@ -99,6 +99,7 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             "1002",  # door/window (parent)
             "1003",  # ventilation/heating (parent)
             "1004",  # tire pressure (parent)
+            "1010",  # battery heating (parent)
             "1014",  # location
             # 1030 = "one-tap prep" (一键备车): the scheduled departure /
             # pre-conditioning flow (BOOKINGAIR under the hood); no separate

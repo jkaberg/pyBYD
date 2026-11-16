@@ -543,7 +543,15 @@ class BatteryHeatParams(ControlParams):
     """Parameters for battery heating (commandType ``BATTERYHEAT``)."""
 
     on: bool = Field(..., serialization_alias="batteryHeatSwitch")
+    heat_type: int = Field(default=2, exclude=True)
 
     @field_serializer("on")
     def _serialize_on(self, value: bool) -> int:
         return 1 if value else 0
+
+    def to_dedicated_control_params_map(self) -> dict[str, Any]:
+        """Return wire params for ``/control/remoteControlBatteryHeat`` (``10100001``)."""
+        return {
+            "batteryHeat": 1 if self.on else 0,
+            "heatType": self.heat_type,
+        }

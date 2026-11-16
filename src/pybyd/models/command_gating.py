@@ -170,7 +170,7 @@ _COMMAND_GATE_RULES: tuple[CommandGateRule, ...] = (
         {
             "gateId": "battery_heat",
             "command": RemoteCommand.BATTERY_HEAT,
-            "requiredFunctionNos": ["10300002"],
+            "requiredFunctionNos": ["10300002", "10100001"],
         }
     ),
     CommandGateRule.model_validate(

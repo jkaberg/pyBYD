@@ -39,7 +39,14 @@ _logger = logging.getLogger(__name__)
 _CONTROL_PASSWORD_ERROR_CODES: frozenset[str] = frozenset({"5005", "5006", "5011"})
 _REMOTE_CONTROL_SERVICE_ERROR_CODES: frozenset[str] = frozenset({"1009"})
 _REMOTE_CONTROL_GENERIC_ERROR_CODES: frozenset[str] = frozenset({"1001"})
-_REMOTE_CONTROL_ENDPOINTS: frozenset[str] = frozenset({"/control/remoteControl", "/control/remoteControlResult"})
+_REMOTE_CONTROL_ENDPOINTS: frozenset[str] = frozenset(
+    {
+        "/control/remoteControl",
+        "/control/remoteControlResult",
+        "/control/remoteControlBatteryHeat",
+        "/control/remoteControlBatteryHeatResult",
+    }
+)
 _VERIFY_CONTROL_PASSWORD_ENDPOINT = "/vehicle/vehicleswitch/verifyControlPassword"
 
 # Extra error-code mappings for control endpoints.
@@ -317,11 +324,17 @@ async def _poll_remote_control_once(
     on_trigger_dispatched: Callable[[str | None], None] | None = None,
 ) -> RemoteControlResult:
     """Single attempt: trigger + poll.  Raises on failure."""
+    is_battery_heat = (
+        command is RemoteCommand.BATTERY_HEAT and control_params is not None and "batteryHeat" in control_params
+    )
+    trigger_endpoint = "/control/remoteControlBatteryHeat" if is_battery_heat else "/control/remoteControl"
+    poll_endpoint = "/control/remoteControlBatteryHeatResult" if is_battery_heat else "/control/remoteControlResult"
+
     # Phase 1: Trigger request (with control params) — retry on 6024
     for rate_attempt in range(1, rate_limit_retries + 1):
         try:
             result, serial = await _fetch_control_endpoint(
-                "/control/remoteControl",
+                trigger_endpoint,
                 config,
                 session,
                 transport,
@@ -353,7 +366,7 @@ async def _poll_remote_control_once(
         raise BydRateLimitError(
             f"Remote control {command.name} rate-limited after {rate_limit_retries} retries (code 6024)",
             code="6024",
-            endpoint="/control/remoteControl",
+            endpoint=trigger_endpoint,
         )
 
     _logger.debug(
@@ -370,7 +383,7 @@ async def _poll_remote_control_once(
             raise BydRemoteControlError(
                 f"Remote control {command.name} failed: {msg}",
                 code="2",
-                endpoint="/control/remoteControl",
+                endpoint=trigger_endpoint,
             )
         return parsed
 
@@ -385,7 +398,7 @@ async def _poll_remote_control_once(
         raise BydRemoteControlError(
             f"Remote control {command.name} could not be confirmed " f"(vehicle returned no request serial)",
             code="no_serial",
-            endpoint="/control/remoteControl",
+            endpoint=trigger_endpoint,
         )
 
     if mqtt_result_waiter is not None:
@@ -409,7 +422,7 @@ async def _poll_remote_control_once(
                         raise BydRemoteControlError(
                             f"Remote control {command.name} rejected by vehicle " f"(controlState=2)",
                             code="2",
-                            endpoint="/control/remoteControl",
+                            endpoint=trigger_endpoint,
                         )
                     return mqtt_result
             _logger.debug("Remote control %s mqtt_wait returned no result; falling back to polling", command.name)
@@ -425,12 +438,14 @@ async def _poll_remote_control_once(
 
         try:
             latest, serial = await _fetch_control_endpoint(
-                "/control/remoteControlResult",
+                poll_endpoint,
                 config,
                 session,
                 transport,
                 vin,
                 command,
+                control_params=control_params if is_battery_heat else None,
+                command_pwd=command_pwd if is_battery_heat else None,
                 request_serial=serial,
             )
             _logger.debug(
@@ -469,7 +484,7 @@ async def _poll_remote_control_once(
         raise BydRemoteControlError(
             f"Remote control {command.name} failed: {msg}",
             code="2",
-            endpoint="/control/remoteControlResult",
+            endpoint=poll_endpoint,
         )
     if not reached_terminal:
         # Loop exhausted without the cloud ever returning a terminal result —
@@ -478,6 +493,6 @@ async def _poll_remote_control_once(
         raise BydRemoteControlError(
             f"Remote control {command.name} not confirmed within timeout " f"(vehicle may be asleep or offline)",
             code="timeout",
-            endpoint="/control/remoteControlResult",
+            endpoint=poll_endpoint,
         )
     return parsed
