@@ -134,3 +134,10 @@ async def test_start_when_off_uses_defaults() -> None:
     data = sent[-1].to_control_params_map()
     assert data["cycleMode"] == 2
     assert "windLevel" not in data
+
+
+@pytest.mark.parametrize(("raw", "expected"), [(1, False), (2, True), (None, None), (99, None)])
+def test_compressor_state(raw: int | None, expected: bool | None) -> None:
+    # issue #64: Dolphin Surf dumps show acSwitch 1=off, 2=on
+    hvac = HvacStatus.model_validate({} if raw is None else {"acSwitch": raw})
+    assert hvac.is_compressor_on is expected

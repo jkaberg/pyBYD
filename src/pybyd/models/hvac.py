@@ -23,9 +23,11 @@ __all__ = [
 
 
 class AcSwitch(BydEnum):
-    """A/C switch state. Relationship to ``HvacOverallStatus`` is unclear."""
+    """A/C compressor switch, separate from the overall ``HvacOverallStatus``."""
 
     UNKNOWN = -1
+    OFF = 1
+    ON = 2
 
 
 class HvacOverallStatus(BydEnum):
@@ -159,6 +161,13 @@ class HvacStatus(BydBaseModel):
             return int(self.status) == int(HvacOverallStatus.ON)
         except (TypeError, ValueError):
             return False
+
+    @property
+    def is_compressor_on(self) -> bool | None:
+        """Whether the A/C compressor is on, ``None`` when not reported."""
+        if self.ac_switch is None or self.ac_switch == AcSwitch.UNKNOWN:
+            return None
+        return self.ac_switch == AcSwitch.ON
 
     @property
     def temp_offset(self) -> float:
