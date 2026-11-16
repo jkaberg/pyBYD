@@ -62,6 +62,7 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     FeatureSpec("digital_key", "Digital key", ("1013",), "metadata"),
     FeatureSpec("nfc_key_3c", "NFC key (3C)", ("10130002",), "metadata"),
     FeatureSpec("energy_analysis", "Energy analysis", ("1022",), "sensor"),
+    FeatureSpec("sentry", "Sentry mode", ("1024",), "sensor"),
     FeatureSpec("vehicle_health", "Vehicle health summary", ("1023",), "sensor"),
     FeatureSpec("health_tpms", "Health: tire pressure system", ("10230001",), "sensor"),
     FeatureSpec("health_steering", "Health: steering system", ("10230002",), "sensor"),
@@ -208,6 +209,7 @@ class VehicleCapabilities(BydBaseModel):
     digital_key: bool | None = None
     nfc_key_3c: bool | None = None
     energy_analysis: bool | None = None
+    sentry: bool | None = None
     vehicle_health: bool | None = None
     health_tpms: bool | None = None
     health_steering: bool | None = None

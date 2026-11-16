@@ -163,8 +163,8 @@ def test_supported_summary_pins_count() -> None:
     caps = VehicleCapabilities.from_latest_config("VIN_PLACEHOLDER", _build_latest(_OVERSEAS_FUNCTION_NOS))
     supported, total = caps.supported_summary()
     assert total == len(FEATURE_REGISTRY)
-    # the test vehicle supports every registry feature except battery_heat.
-    assert supported == total - 1, f"the test vehicle fixture supported={supported}/{total} (expected total-1)"
+    # the test vehicle supports every registry feature except battery_heat and sentry.
+    assert supported == total - 2, f"the test vehicle fixture supported={supported}/{total} (expected total-2)"
 
 
 def test_feature_report_returns_one_row_per_registry_entry() -> None:
@@ -199,3 +199,13 @@ def test_no_function_nos_means_no_features_supported() -> None:
     assert total == len(FEATURE_REGISTRY)
     for spec in FEATURE_REGISTRY:
         assert getattr(caps, spec.key) is False, f"{spec.key} should be False with no functionNos"
+
+
+def test_sentry_capability_tracks_1024_function_no() -> None:
+    """sentry is True when 1024 is present and False when omitted."""
+    without_sentry = VehicleCapabilities.from_latest_config("VIN_PLACEHOLDER", _build_latest(["1005"]))
+    with_sentry = VehicleCapabilities.from_latest_config("VIN_PLACEHOLDER", _build_latest(["1005", "1024"]))
+
+    assert without_sentry.sentry is False
+    assert with_sentry.sentry is True
+    assert with_sentry.unknown_function_nos == []
