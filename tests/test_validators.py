@@ -1319,3 +1319,17 @@ class TestHvacPlaceholderFilter:
 
         assert filtered.temp_out_car is None
         assert filtered.main_setting_temp == 0.0
+
+
+class TestOilPercentSentinel:
+    """Negative sentinel values on oil_percent normalise to None."""
+
+    def test_negative_sentinel_normalises_to_none(self) -> None:
+        data = VehicleRealtimeData.model_validate({"oil_percent": -1, "oil_endurance": -1})
+
+        assert data.oil_percent is None
+        assert data.oil_endurance is None
+
+    def test_non_negative_values_preserved(self) -> None:
+        assert VehicleRealtimeData.model_validate({"oil_percent": 0}).oil_percent == 0.0
+        assert VehicleRealtimeData.model_validate({"oil_percent": 74.0}).oil_percent == 74.0

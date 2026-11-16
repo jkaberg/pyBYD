@@ -455,8 +455,9 @@ class VehicleRealtimeData(BydBaseModel):
         "left_rear_tire_status": is_negative,
         "right_rear_tire_status": is_negative,
         "upgrade_status": is_negative,
-        # Fuel range: -1 means unavailable (BEV or no data).
+        # Fuel range & percentage: -1 means unavailable (BEV or no data).
         "oil_endurance": is_negative,
+        "oil_percent": is_negative,
         # EV range / SoC: -1 sentinel on post-wake or deep-sleep payloads.
         # 0 is intentionally NOT a sentinel — an empty battery is a valid
         # reading.  We only strip negatives.
@@ -619,7 +620,7 @@ class VehicleRealtimeData(BydBaseModel):
     oil_endurance: float | None = None
     """Fuel-based range (km). Sentinel ``-1`` -> ``None``."""
     oil_percent: float | None = None
-    """Fuel percentage."""
+    """Fuel percentage. Sentinel ``-1`` -> ``None``."""
     total_oil: float | None = None
     """Total fuel consumption."""
 
