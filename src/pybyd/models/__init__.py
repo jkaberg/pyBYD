@@ -45,11 +45,12 @@ from pybyd.models.realtime import (
     VehicleState,
     WindowState,
 )
-from pybyd.models.smart_charging import SmartChargingSchedule
+from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
 from pybyd.models.token import AuthToken
 from pybyd.models.vehicle import EmpowerRange, EnergyType, Vehicle
 
 __all__ = [
+    "AcCurrentLimit",
     "AirCirculationMode",
     "AuthToken",
     "BatteryHeatParams",

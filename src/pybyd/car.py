@@ -44,6 +44,7 @@ from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities
 from pybyd.models.realtime import VehicleRealtimeData
+from pybyd.models.smart_charging import AcCurrentLimit
 from pybyd.models.vehicle import Vehicle
 
 if TYPE_CHECKING:
@@ -264,6 +265,10 @@ class BydCar:
         data = await self._client.get_energy_consumption(self._vin)
         await self._engine.update_energy(data)
         return data
+
+    async def get_ac_current_limit(self) -> AcCurrentLimit:
+        """Fetch supported and active AC charging current limits for this vehicle."""
+        return await self._client.get_ac_current_limit(self._vin)
 
     async def save_charging_schedule(
         self,
