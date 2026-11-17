@@ -163,8 +163,9 @@ def test_supported_summary_pins_count() -> None:
     caps = VehicleCapabilities.from_latest_config("VIN_PLACEHOLDER", _build_latest(_OVERSEAS_FUNCTION_NOS))
     supported, total = caps.supported_summary()
     assert total == len(FEATURE_REGISTRY)
-    # the test vehicle supports every registry feature except battery_heat.
-    assert supported == total - 1, f"the test vehicle fixture supported={supported}/{total} (expected total-1)"
+    # the test vehicle supports every registry feature except battery_heat
+    # and the four ATTO 3 EVO additions (nfc_key, uwb_key, mobile_ota, scheduled_departure).
+    assert supported == total - 5, f"the test vehicle fixture supported={supported}/{total} (expected total-5)"
 
 
 def test_feature_report_returns_one_row_per_registry_entry() -> None:
@@ -199,3 +200,54 @@ def test_no_function_nos_means_no_features_supported() -> None:
     assert total == len(FEATURE_REGISTRY)
     for spec in FEATURE_REGISTRY:
         assert getattr(caps, spec.key) is False, f"{spec.key} should be False with no functionNos"
+
+
+def test_atto3_evo_function_nos_map_battery_heat_and_leave_no_unknowns() -> None:
+    """EU BYD ATTO 3 EVO getLatestConfig functionNos map cleanly with no unknowns."""
+    atto3_evo_fns = [
+        "1001",
+        "1002",
+        "10020001",
+        "10020002",
+        "10020003",
+        "10020004",
+        "10020005",
+        "1003",
+        "10030001",
+        "10030002",
+        "10030004",
+        "10030005",
+        "10030010",
+        "10030013",
+        "1004",
+        "10040001",
+        "1005",
+        "1006",
+        "1007",
+        "1008",
+        "1009",
+        "1010",
+        "10100001",
+        "1012",
+        "1013",
+        "10130001",
+        "10130002",
+        "10130003",
+        "1014",
+        "1016",
+        "1022",
+        "1026",
+        "1029",
+        "1030",
+        "10300001",
+        "10300003",
+        "10300004",
+    ]
+    caps = VehicleCapabilities.from_latest_config("VIN_PLACEHOLDER", _build_latest(atto3_evo_fns))
+
+    assert caps.unknown_function_nos == []
+    assert caps.nfc_key is True
+    assert caps.nfc_key_3c is True
+    assert caps.uwb_key is True
+    assert caps.mobile_ota is True
+    assert caps.scheduled_departure is True
