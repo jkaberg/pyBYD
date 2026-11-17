@@ -161,6 +161,20 @@ _COMMAND_GATE_RULES: tuple[CommandGateRule, ...] = (
     ),
     CommandGateRule.model_validate(
         {
+            "gateId": "seat_rear_left",
+            "command": RemoteCommand.SEAT_CLIMATE,
+            "requiredFunctionNos": ["10030006", "10030007"],
+        }
+    ),
+    CommandGateRule.model_validate(
+        {
+            "gateId": "seat_rear_right",
+            "command": RemoteCommand.SEAT_CLIMATE,
+            "requiredFunctionNos": ["10030008", "10030009"],
+        }
+    ),
+    CommandGateRule.model_validate(
+        {
             "gateId": "steering_wheel_heat",
             "command": RemoteCommand.SEAT_CLIMATE,
             "requiredFunctionNos": ["10030010", "10300004"],
@@ -198,6 +212,8 @@ _COMMAND_GATE_RULES: tuple[CommandGateRule, ...] = (
 _SEAT_GATE_BY_CHAIR_TYPE: dict[str, str] = {
     "1": "seat_driver",
     "2": "seat_passenger",
+    "3": "seat_rear_left",
+    "4": "seat_rear_right",
     "5": "steering_wheel_heat",
 }
 

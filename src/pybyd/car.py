@@ -142,6 +142,10 @@ class BydCar:
             driver_ventilation_available=self._capabilities.driver_seat_ventilation,
             passenger_heat_available=self._capabilities.passenger_seat_heat,
             passenger_ventilation_available=self._capabilities.passenger_seat_ventilation,
+            rear_left_heat_available=self._capabilities.rear_left_seat_heat,
+            rear_left_ventilation_available=self._capabilities.rear_left_seat_ventilation,
+            rear_right_heat_available=self._capabilities.rear_right_seat_heat,
+            rear_right_ventilation_available=self._capabilities.rear_right_seat_ventilation,
         )
         self.steering = SteeringCapability(
             set_seat_climate_fn=client.set_seat_climate,

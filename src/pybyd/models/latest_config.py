@@ -47,6 +47,8 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     FeatureSpec("passenger_seat_ventilation", "Passenger seat ventilation", ("10030004", "10300003"), "command"),
     FeatureSpec("rear_left_seat_heat", "Rear left seat heat", ("10030007",), "command"),
     FeatureSpec("rear_right_seat_heat", "Rear right seat heat", ("10030009",), "command"),
+    FeatureSpec("rear_left_seat_ventilation", "Rear left seat ventilation", ("10030006",), "command"),
+    FeatureSpec("rear_right_seat_ventilation", "Rear right seat ventilation", ("10030008",), "command"),
     FeatureSpec("find_car", "Find car (horn + lights)", ("1007",), "command"),
     FeatureSpec("flash_lights", "Flash lights", ("1008",), "command"),
     FeatureSpec("close_windows", "Close windows", ("1026",), "command"),
@@ -197,6 +199,8 @@ class VehicleCapabilities(BydBaseModel):
     passenger_seat_ventilation: bool | None = None
     rear_left_seat_heat: bool | None = None
     rear_right_seat_heat: bool | None = None
+    rear_left_seat_ventilation: bool | None = None
+    rear_right_seat_ventilation: bool | None = None
 
     find_car: bool | None = None
     flash_lights: bool | None = None

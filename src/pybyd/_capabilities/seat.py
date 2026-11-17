@@ -20,6 +20,8 @@ class SeatPosition(enum.StrEnum):
 
     DRIVER = "driver"
     COPILOT = "copilot"
+    REAR_LEFT = "rear_left"
+    REAR_RIGHT = "rear_right"
 
 
 class SeatLevel(enum.IntEnum):
@@ -54,6 +56,10 @@ _PARAM_KEY_MAP: dict[tuple[SeatPosition, str], str] = {
     (SeatPosition.DRIVER, "vent"): "main_ventilation",
     (SeatPosition.COPILOT, "heat"): "copilot_heat",
     (SeatPosition.COPILOT, "vent"): "copilot_ventilation",
+    (SeatPosition.REAR_LEFT, "heat"): "lr_seat_heat_state",
+    (SeatPosition.REAR_LEFT, "vent"): "lr_seat_ventilation_state",
+    (SeatPosition.REAR_RIGHT, "heat"): "rr_seat_heat_state",
+    (SeatPosition.REAR_RIGHT, "vent"): "rr_seat_ventilation_state",
 }
 
 # Mapping from (position, "heat"/"vent") → status model field name (for projections)
@@ -62,6 +68,10 @@ _STATUS_FIELD_MAP: dict[tuple[SeatPosition, str], str] = {
     (SeatPosition.DRIVER, "vent"): "main_seat_ventilation_state",
     (SeatPosition.COPILOT, "heat"): "copilot_seat_heat_state",
     (SeatPosition.COPILOT, "vent"): "copilot_seat_ventilation_state",
+    (SeatPosition.REAR_LEFT, "heat"): "lr_seat_heat_state",
+    (SeatPosition.REAR_LEFT, "vent"): "lr_seat_ventilation_state",
+    (SeatPosition.REAR_RIGHT, "heat"): "rr_seat_heat_state",
+    (SeatPosition.REAR_RIGHT, "vent"): "rr_seat_ventilation_state",
 }
 
 
@@ -84,26 +94,28 @@ class SeatCapability:
         driver_ventilation_available: bool | None = True,
         passenger_heat_available: bool | None = True,
         passenger_ventilation_available: bool | None = True,
+        rear_left_heat_available: bool | None = None,
+        rear_left_ventilation_available: bool | None = None,
+        rear_right_heat_available: bool | None = None,
+        rear_right_ventilation_available: bool | None = None,
     ) -> None:
         self._set_seat_climate_fn = set_seat_climate_fn
         self._vin = vin
         self._get_state = get_state
         self._execute = execute_command
-        self._driver_heat_available = driver_heat_available
-        self._driver_ventilation_available = driver_ventilation_available
-        self._passenger_heat_available = passenger_heat_available
-        self._passenger_ventilation_available = passenger_ventilation_available
+        self._available: dict[tuple[SeatPosition, str], bool | None] = {
+            (SeatPosition.DRIVER, "heat"): driver_heat_available,
+            (SeatPosition.DRIVER, "vent"): driver_ventilation_available,
+            (SeatPosition.COPILOT, "heat"): passenger_heat_available,
+            (SeatPosition.COPILOT, "vent"): passenger_ventilation_available,
+            (SeatPosition.REAR_LEFT, "heat"): rear_left_heat_available,
+            (SeatPosition.REAR_LEFT, "vent"): rear_left_ventilation_available,
+            (SeatPosition.REAR_RIGHT, "heat"): rear_right_heat_available,
+            (SeatPosition.REAR_RIGHT, "vent"): rear_right_ventilation_available,
+        }
 
     def _is_mode_available(self, position: SeatPosition, mode: str) -> bool:
-        if position == SeatPosition.DRIVER and mode == "heat":
-            return bool(self._driver_heat_available)
-        if position == SeatPosition.DRIVER and mode == "vent":
-            return bool(self._driver_ventilation_available)
-        if position == SeatPosition.COPILOT and mode == "heat":
-            return bool(self._passenger_heat_available)
-        if position == SeatPosition.COPILOT and mode == "vent":
-            return bool(self._passenger_ventilation_available)
-        return False
+        return bool(self._available.get((position, mode)))
 
     async def heat(self, position: SeatPosition, level: SeatLevel) -> None:
         """Set seat heating level.

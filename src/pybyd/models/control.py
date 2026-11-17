@@ -429,13 +429,13 @@ class SeatClimateParams(ControlParams):
     A value of ``0`` means "not applicable / feature absent".
 
     The ``chair_type`` field indicates which seat/feature the command
-    targets:  ``"1"`` = driver, ``"2"`` = copilot, ``"5"`` = steering
-    wheel.  ``remote_mode`` is always ``1`` for seat/steering commands.
+    targets:  ``"1"`` = driver, ``"2"`` = copilot, ``"3"`` = rear left,
+    ``"4"`` = rear right, ``"5"`` = steering wheel.  ``remote_mode`` is always ``1`` for seat/steering commands.
     """
 
     # --- Target identification ---
     chair_type: str | None = Field(default=None)
-    """Which seat the command targets: "1"=driver, "2"=copilot, "5"=steering wheel."""
+    """Which seat the command targets: "1"=driver, "2"=copilot, "3"=rear left, "4"=rear right, "5"=steering wheel."""
 
     remote_mode: int = Field(default=1, ge=1, le=4)
     """Always ``1`` for seat/steering wheel commands."""
@@ -470,6 +470,10 @@ class SeatClimateParams(ControlParams):
         "main_ventilation": "1",
         "copilot_heat": "2",
         "copilot_ventilation": "2",
+        "lr_seat_heat_state": "3",
+        "lr_seat_ventilation_state": "3",
+        "rr_seat_heat_state": "4",
+        "rr_seat_ventilation_state": "4",
         "steering_wheel_heat_state": "5",
     }
 
