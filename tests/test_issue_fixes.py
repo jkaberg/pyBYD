@@ -8,7 +8,7 @@ import logging
 import pytest
 
 from pybyd._api._common import decode_respond_data
-from pybyd._api.login import build_login_request
+from pybyd._api.login import _APP_NAME, _clean_app_version, build_login_request
 from pybyd._crypto.aes import aes_encrypt_hex
 from pybyd._redact import redact_for_log
 from pybyd.config import BydConfig
@@ -70,3 +70,25 @@ def test_identifier_type_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BYD_IDENTIFIER_TYPE", "1")
     config = BydConfig.from_env()
     assert config.identifier_type == "1"
+
+
+@pytest.mark.parametrize(
+    ("raw_version", "expected"),
+    [
+        ("0.0.84", "0.0.84"),
+        ("0.0.74.dev0+gf60e6cbe6.d20260814", "0.0.74"),
+        ("0.0.84.post1", "0.0.84"),
+        ("0+local", "0"),
+        ("unknown", "0.0.0"),
+    ],
+)
+def test_clean_app_version_strips_dev_suffixes(raw_version: str, expected: str) -> None:
+    assert _clean_app_version(raw_version) == expected
+
+
+def test_login_app_name_has_no_dev_suffix() -> None:
+    config = BydConfig(username="user@example.com", password="pw")
+    app_name = build_login_request(config, 0)["appName"]
+    assert app_name == _APP_NAME
+    assert ".dev" not in app_name
+    assert app_name.count("+") == 1
