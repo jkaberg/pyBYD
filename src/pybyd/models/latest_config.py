@@ -60,7 +60,11 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     # Informational / sensor capabilities.
     FeatureSpec("child_presence_detection", "Child presence detection (CPD)", ("1009",), "sensor"),
     FeatureSpec("digital_key", "Digital key", ("1013",), "metadata"),
+    FeatureSpec("nfc_key", "NFC key", ("10130001",), "metadata"),
     FeatureSpec("nfc_key_3c", "NFC key (3C)", ("10130002",), "metadata"),
+    FeatureSpec("uwb_key", "UWB key", ("10130003",), "metadata"),
+    FeatureSpec("mobile_ota", "Mobile OTA", ("1016",), "metadata"),
+    FeatureSpec("scheduled_departure", "Scheduled departure", ("1029",), "metadata"),
     FeatureSpec("energy_analysis", "Energy analysis", ("1022",), "sensor"),
     FeatureSpec("vehicle_health", "Vehicle health summary", ("1023",), "sensor"),
     FeatureSpec("health_tpms", "Health: tire pressure system", ("10230001",), "sensor"),
@@ -100,6 +104,7 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             "1003",  # ventilation/heating (parent)
             "1004",  # tire pressure (parent)
             "1010",  # battery heating (parent)
+            "10100001",  # driving battery preheating
             "1014",  # location
             # 1030 = "one-tap prep" (一键备车): the scheduled departure /
             # pre-conditioning flow (BOOKINGAIR under the hood); no separate
@@ -115,6 +120,7 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             "10020004",  # up windows remotely
             "10020005",  # windows
             "10030011",  # seat rows
+            "10030013",  # three-speed seats
             "10040001",  # direct tire pressure
         }
     )
@@ -207,7 +213,11 @@ class VehicleCapabilities(BydBaseModel):
     one_click_shutdown: bool | None = None
     child_presence_detection: bool | None = None
     digital_key: bool | None = None
+    nfc_key: bool | None = None
     nfc_key_3c: bool | None = None
+    uwb_key: bool | None = None
+    mobile_ota: bool | None = None
+    scheduled_departure: bool | None = None
     energy_analysis: bool | None = None
     vehicle_health: bool | None = None
     health_tpms: bool | None = None
