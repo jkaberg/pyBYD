@@ -30,6 +30,11 @@ class ChargingStatus(BydBaseModel):
     wait_status: int | None = None
     full_hour: int | None = None
     full_minute: int | None = None
+    charge_power: float | None = None
+    """Charging power while charging, in :attr:`charge_power_unit`.
+    ``None`` when not charging."""
+    charge_power_unit: str | None = None
+    """Unit for :attr:`charge_power` (``"kW"`` observed)."""
     update_time: BydTimestamp = None
     """Last data update timestamp (parsed to UTC datetime)."""
 

@@ -58,9 +58,8 @@ class ChargingState(BydEnum):
     NOT_CHARGING = 0
     CHARGING = 1
     CONNECTED = 15
-    # We previously thought value 15 represented "connected", but this value
-    # does not change when the charging gun is disconnected, so we should not
-    # rely on it.
+    # misnamed: 15 is the idle value, reported both unplugged and plugged in
+    # but not charging (Sealion 6, Sealion 7, ATTO 3 EVO; see issue #20)
 
 
 class SentryStatus(BydEnum):
@@ -464,8 +463,9 @@ class VehicleRealtimeData(BydBaseModel):
         "endurance_mileage": is_negative,
         "endurance_mileage_v2": is_negative,
         "elec_percent": is_negative,
-        # Charge rate: large negative sentinels when not charging.
-        "rate": lambda v: v is not None and v <= -9,
+        # Charge rate: -999 when idle. Real charging is negative kW, so
+        # anything above -999 (e.g. -50 on a DC charger) is a valid reading.
+        "rate": lambda v: v is not None and v <= -999,
     }
 
     # --- Connection & state ---
@@ -670,7 +670,13 @@ class VehicleRealtimeData(BydBaseModel):
 
     # --- Charging (extended) ---
     rate: float | None = None
-    """Charge rate. Sentinel values (-999, -9) when not charging."""
+    """Battery power in kW, whole numbers. Negative while charging,
+    positive while discharging. Sentinel ``-999`` -> ``None``."""
+    charge_power: float | None = None
+    """Charging power while charging, in :attr:`charge_power_unit`.
+    ``None`` when not charging."""
+    charge_power_unit: str | None = None
+    """Unit for :attr:`charge_power` (``"kW"`` observed)."""
     less_one_min: bool | None = None
     """Time-to-full is less than one minute."""
 
@@ -990,12 +996,16 @@ class VehicleRealtimeData(BydBaseModel):
         return self.effective_charging_state == ChargingState.CHARGING
 
     @property
-    def is_charger_connected(self) -> bool:
-        """Whether the charging gun is physically connected."""
-        return self.effective_charging_state in (
-            ChargingState.CHARGING,
-            ChargingState.CONNECTED,
-        )
+    def is_charger_connected(self) -> bool | None:
+        """Whether the charging gun is connected, as far as realtime can tell.
+
+        ``True`` while charging, otherwise ``None``: ``charge_state`` reads
+        ``15`` both unplugged and plugged in but idle, and ``connect_state``
+        stays ``-1``. Use :attr:`ChargingStatus.is_connected` for plug state.
+        """
+        if self.effective_charging_state == ChargingState.CHARGING:
+            return True
+        return None
 
     @property
     def time_to_full_minutes(self) -> int | None:
