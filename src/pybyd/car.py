@@ -131,6 +131,7 @@ class BydCar:
             vin=vin,
             execute_command=self._execute_command,
             get_state=lambda: self._engine.snapshot,
+            refresh_fn=self.update_hvac,
             available=self._capabilities.climate,
         )
         self.seat = SeatCapability(

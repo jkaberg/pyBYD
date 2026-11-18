@@ -117,18 +117,19 @@ _COMMAND_GATE_RULES: tuple[CommandGateRule, ...] = (
     ),
     # Open windows: ``1026`` from cfFixedList is present on cars that
     # support either direction, but only a subset can actually OPEN
-    # remotely (others only support CLOSE).  ``openWindowLearnInfo`` /
-    # ``openWindow499LearnInfo`` on ``vehicleFunLearnInfo`` flip to ``1``
-    # only on the open-capable VINs — confirmed live on a Sealion 7 EU
-    # 2024 where both are ``1`` and OPENWINDOW cracks the windows to
-    # ~10 % vent, vs. jkaberg's car where 1026 is present but the
-    # command had no physical effect (Issue #47).
+    # remotely (others only support CLOSE).  ``openWindowLearnInfo`` on
+    # ``vehicleFunLearnInfo`` is ``1`` only on the open-capable VINs: a
+    # Sealion 7 EU 2024 has it at ``1`` and OPENWINDOW cracks the windows
+    # to ~10 % vent (#47).  ``openWindow499LearnInfo`` alone is not
+    # enough: an ATTO 3 EVO has it at ``1`` with ``openWindowLearnInfo``
+    # at ``0``, and there OPENWINDOW never leaves ``res: 1`` and blocks
+    # the next command with 6024 for a minute or two (#20).
     CommandGateRule.model_validate(
         {
             "gateId": "open_windows",
             "command": RemoteCommand.OPEN_WINDOWS,
             "requiredFunctionNos": ["1026"],
-            "requiredLearnInfoKeys": ["openWindowLearnInfo", "openWindow499LearnInfo"],
+            "requiredLearnInfoKeys": ["openWindowLearnInfo"],
         }
     ),
     CommandGateRule.model_validate(
