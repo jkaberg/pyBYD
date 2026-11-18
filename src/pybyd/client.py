@@ -7,8 +7,9 @@ import contextlib
 import functools
 import logging
 import random
+import re
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -26,6 +27,7 @@ from pybyd._api import ota as _ota_api
 from pybyd._api import push_notifications as _push_api
 from pybyd._api import realtime as _realtime_api
 from pybyd._api import smart_charging as _smart_api
+from pybyd._api import standby as _standby_api
 from pybyd._api import vehicle as _vehicle_api
 from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
@@ -78,6 +80,7 @@ from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
+from pybyd.models.standby import StandbyPlan, StandbyPlanList, StandbyPlanRunResult
 from pybyd.models.vehicle import EnergyType, Vehicle
 from pybyd.session import Session
 
@@ -85,6 +88,8 @@ if TYPE_CHECKING:
     from pybyd.car import BydCar
 
 _logger = logging.getLogger(__name__)
+
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 T = TypeVar("T")
 _M = TypeVar("_M", bound=BydBaseModel)
@@ -1892,3 +1897,80 @@ class BydClient:
             auto_upgrade_time=auto_upgrade_time,
             command_pwd=resolved_pwd,
         )
+
+    async def get_standby_plans(self, vin: str) -> StandbyPlanList:
+        """Fetch the preconditioning plans app 3.6.0 schedules climate with.
+
+        Needs the owner account; the guest account gets ``1001``.
+        """
+        return await self._authed_call(_standby_api.fetch_standby_plans, vin)
+
+    async def save_standby_plan(
+        self,
+        vin: str,
+        plan: StandbyPlan,
+        *,
+        start_time: str | None = None,
+        weekly_days: Sequence[int] | None = None,
+    ) -> StandbyPlanList:
+        """Save a plan's commands and schedule, then return the fresh plans.
+
+        ``start_time`` is ``"HH:MM"`` and ``weekly_days`` uses ``0`` =
+        Monday … ``6`` = Sunday.  ``None`` keeps the plan's current value;
+        pass ``""`` and ``[]`` to unschedule.  A time without days is
+        not scheduled by the cloud.  Edit ``plan.commands`` (eg the
+        ``OPENAIR`` ``controlParamsMap``) to change what the plan does.
+        """
+        time_value = plan.start_time if start_time is None else start_time
+        days = plan.weekly_days if weekly_days is None else list(weekly_days)
+        if time_value and not _HHMM.fullmatch(time_value):
+            raise ValueError(f"start_time must be HH:MM, got {time_value!r}")
+        if any(not 0 <= day <= 6 for day in days):
+            raise ValueError(f"weekly_days must be 0-6, got {days!r}")
+        await self._authed_call(
+            _standby_api.save_standby_plan,
+            vin,
+            plan,
+            start_time=time_value,
+            weekly_days=days,
+        )
+        return await self.get_standby_plans(vin)
+
+    async def run_standby_plan(
+        self,
+        vin: str,
+        plan_id: str,
+        *,
+        poll_attempts: int = 10,
+        poll_interval: float = 1.5,
+    ) -> StandbyPlanRunResult:
+        """Run a plan now, keeping its schedule.
+
+        The final ``res`` of ``send-result`` hasn't been captured yet; the
+        app stops polling while it still says ``1`` even though the climate
+        comes on.  So a result still at ``1`` is returned as is, and only
+        a terminal failure raises.
+        """
+
+        async def _call() -> StandbyPlanRunResult:
+            result = await self._trigger_and_poll(
+                vin=vin,
+                trigger_endpoint=_standby_api.SEND_ENDPOINT,
+                poll_endpoint=_standby_api.SEND_RESULT_ENDPOINT,
+                fetch_fn=_standby_api.make_send_fetch_fn(plan_id),
+                is_ready=_standby_api.is_send_ready,
+                model_cls=StandbyPlanRunResult,
+                label="StandbyPlanRun",
+                mqtt_timeout=0,
+                poll_attempts=poll_attempts,
+                poll_interval=poll_interval,
+            )
+            if result.res is not None and result.res not in (1, 2):
+                raise BydRemoteControlError(
+                    f"standby plan run rejected by cloud (res={result.res}, message={result.message!r})",
+                    code=str(result.res),
+                    endpoint=_standby_api.SEND_RESULT_ENDPOINT,
+                )
+            return result.model_copy(update={"vin": vin})
+
+        return await self._call_with_reauth(_call)
