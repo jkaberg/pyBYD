@@ -116,6 +116,20 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             # function_no. Confirmed distinct on a live Sealion 7 (issue #161).
             "1030",
             "1031",
+            # names from the app's config mapping (issue #20), not yet seen
+            # gating anything on a live car, so known but not capabilities
+            "1018",  # front defrost
+            "1019",  # electric defrost
+            "1024",  # sentry
+            "1025",  # open windows (open_windows still gates on 1026)
+            "1032",  # energy consumption view
+            "1033",  # front wiper heat
+            "10020006",  # sliding door
+            "10030012",  # seats are on/off only, no levels
+            "10030014",  # third-row left seat ventilation
+            "10030015",  # third-row left seat heat
+            "10030016",  # third-row right seat ventilation
+            "10030017",  # third-row right seat heat
             "10020001",  # sunroof
             "10020002",  # hood
             "10020003",  # trunk
