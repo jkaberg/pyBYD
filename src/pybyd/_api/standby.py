@@ -2,28 +2,41 @@
 
 Endpoints:
   - /control/standby-vehicles/list         (read plans)
-  - /control/standby-vehicles/save         (edit a plan's commands or schedule)
+  - /control/standby-vehicles/save         (create, or edit commands and schedule)
+  - /control/standby-vehicles/setDefault   (make a plan the default)
+  - /control/standby-vehicles/delete       (delete a user plan)
   - /control/standby-vehicles/send         (run a plan now)
   - /control/standby-vehicles/send-result  (poll the run)
 
-The guest account gets ``1001`` on ``list``, so these need the owner.
+``list`` answers ``1001`` unless the inner payload carries ``userId``.
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import time
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_token_json
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
-from pybyd.models.standby import StandbyPlan, StandbyPlanList
+from pybyd.models.standby import (
+    EXECUTE_DAILY,
+    EXECUTE_ONCE,
+    EXECUTE_WEEKLY,
+    PLAN_TYPE_USER,
+    StandbyPlan,
+    StandbyPlanList,
+    StandbySchedule,
+)
 from pybyd.session import Session
 
 LIST_ENDPOINT = "/control/standby-vehicles/list"
 SAVE_ENDPOINT = "/control/standby-vehicles/save"
+SET_DEFAULT_ENDPOINT = "/control/standby-vehicles/setDefault"
+DELETE_ENDPOINT = "/control/standby-vehicles/delete"
 SEND_ENDPOINT = "/control/standby-vehicles/send"
 SEND_RESULT_ENDPOINT = "/control/standby-vehicles/send-result"
 
@@ -37,6 +50,7 @@ async def fetch_standby_plans(
     """Fetch the vehicle's preconditioning plans."""
     inner = build_inner_base(config, vin=vin)
     inner["timeZone"] = config.time_zone
+    inner["userId"] = session.user_id
     decoded = await post_token_json(
         endpoint=LIST_ENDPOINT,
         config=config,
@@ -51,32 +65,65 @@ async def fetch_standby_plans(
     return StandbyPlanList.model_validate({"vin": vin, "data": plans})
 
 
+def _plan_id(plan_id: str) -> int | str:
+    # the app sends the 64-bit id as a JSON number everywhere but send
+    return int(plan_id) if plan_id.isdigit() else plan_id
+
+
+def _epoch_ms(value: dt.datetime) -> int:
+    return int(value.timestamp() * 1000)
+
+
+def _next_daily(at: dt.datetime, now: dt.datetime) -> dt.datetime:
+    # the app sends the next occurrence of the time, keep a stale one moving
+    while at <= now:
+        at += dt.timedelta(days=1)
+    return at
+
+
+def schedule_fields(schedule: StandbySchedule, *, now: dt.datetime | None = None) -> dict[str, Any]:
+    """``save`` fields for a schedule, as app 3.6.0 sends them."""
+    if schedule.repeat == "once":
+        assert schedule.at is not None
+        return {"executeType": EXECUTE_ONCE, "executeTime": _epoch_ms(schedule.at)}
+    if schedule.repeat == "daily":
+        assert schedule.at is not None
+        at = _next_daily(schedule.at, now or dt.datetime.now(dt.UTC))
+        return {"executeType": EXECUTE_DAILY, "executeTime": _epoch_ms(at)}
+    if schedule.repeat == "weekly":
+        return {
+            "executeType": EXECUTE_WEEKLY,
+            "executeTime": 0,
+            "startTime": schedule.start_time,
+            "weeklyDays": ",".join(str(day) for day in schedule.weekly_days),
+        }
+    # the app's "Scheduled time" toggle off
+    return {"executeType": EXECUTE_WEEKLY, "executeTime": 0, "startTime": "", "weeklyDays": ""}
+
+
 def build_save_inner(
     config: BydConfig,
     vin: str,
     plan: StandbyPlan,
+    schedule: StandbySchedule,
     *,
-    start_time: str,
-    weekly_days: Sequence[int],
+    now: dt.datetime | None = None,
 ) -> dict[str, Any]:
     """Build the ``save`` payload the way app 3.6.0 sends it.
 
-    ``executeType`` is always ``"2"`` and ``executeTime`` ``0``; the
-    cloud computes the next run.  ``commandId`` is left out of
-    ``controlParams`` as the app does.  Empty ``start_time`` and
-    ``weekly_days`` unschedule the plan.
+    A plan without an ``id`` is created; the response doesn't carry the
+    new id, only the next ``list`` does.  ``commandId`` is left out of
+    ``controlParams`` as the app does.
     """
     inner: dict[str, Any] = dict(build_inner_base(config, vin=vin))
+    if plan.id:
+        inner["id"] = _plan_id(plan.id)
     inner.update(
         {
-            "id": int(plan.id) if plan.id.isdigit() else plan.id,
             "planName": plan.plan_name,
-            "planType": plan.plan_type if plan.plan_type is not None else 1,
+            "planType": plan.plan_type if plan.plan_type is not None else PLAN_TYPE_USER,
             "defaultPlan": plan.default_plan if plan.default_plan is not None else 0,
-            "executeType": "2",
-            "executeTime": 0,
-            "startTime": start_time,
-            "weeklyDays": ",".join(str(day) for day in sorted(set(weekly_days))),
+            **schedule_fields(schedule, now=now),
             "controlParams": json.dumps(
                 [
                     {"commandType": command.command_type, "controlParamsMap": command.control_params_map}
@@ -97,14 +144,34 @@ async def save_standby_plan(
     transport: Transport,
     vin: str,
     plan: StandbyPlan,
-    *,
-    start_time: str,
-    weekly_days: Sequence[int],
+    schedule: StandbySchedule,
 ) -> dict[str, Any]:
     """POST ``save``.  The response only carries a ``message``."""
-    inner = build_save_inner(config, vin, plan, start_time=start_time, weekly_days=weekly_days)
     decoded = await post_token_json(
         endpoint=SAVE_ENDPOINT,
+        config=config,
+        session=session,
+        transport=transport,
+        inner=build_save_inner(config, vin, plan, schedule),
+        vin=vin,
+        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+    )
+    return decoded if isinstance(decoded, dict) else {}
+
+
+async def _post_plan_id(
+    endpoint: str,
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    plan_id: str,
+) -> dict[str, Any]:
+    inner: dict[str, Any] = dict(build_inner_base(config, vin=vin))
+    inner["id"] = _plan_id(plan_id)
+    inner["timeZone"] = config.time_zone
+    decoded = await post_token_json(
+        endpoint=endpoint,
         config=config,
         session=session,
         transport=transport,
@@ -113,6 +180,28 @@ async def save_standby_plan(
         not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
     )
     return decoded if isinstance(decoded, dict) else {}
+
+
+async def set_default_standby_plan(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    plan_id: str,
+) -> dict[str, Any]:
+    """POST ``setDefault``.  The cloud clears the flag on the other plans."""
+    return await _post_plan_id(SET_DEFAULT_ENDPOINT, config, session, transport, vin, plan_id)
+
+
+async def delete_standby_plan(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+    vin: str,
+    plan_id: str,
+) -> dict[str, Any]:
+    """POST ``delete``.  The app only offers it on user plans."""
+    return await _post_plan_id(DELETE_ENDPOINT, config, session, transport, vin, plan_id)
 
 
 async def trigger_send_standby_plan(

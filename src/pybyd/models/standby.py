@@ -1,18 +1,22 @@
 """Preconditioning plan models (``/control/standby-vehicles/*``).
 
 App 3.6.0 schedules climate through these plans instead of
-``BOOKINGAIR``.  A plan holds one or more remote commands (``OPENAIR``
-with its ``controlParamsMap``) and an optional weekly schedule; the
-cloud works out the next run and returns it in ``executeTime`` (#91).
+``BOOKINGAIR``.  A plan holds one or more remote commands (``OPENAIR``,
+``VENTILATIONHEATING``, ``STEERINGWHEELHEATING`` with their
+``controlParamsMap``) and an optional schedule: once, every day or
+weekly.  The next run comes back in ``executeTime`` (#91).
 """
 
 from __future__ import annotations
 
+import datetime as dt
 import json
-from typing import Any, ClassVar
+import re
+from typing import Any, ClassVar, Literal
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from pybyd._constants import DEFAULT_TEMP_OFFSET_C, celsius_to_scale, minutes_to_time_span
 from pybyd.models._base import BydBaseModel, BydTimestamp
 
 
@@ -24,6 +28,60 @@ def _json_or_raw(value: Any) -> Any:
         except ValueError:
             return None
     return value
+
+
+COMMAND_CLIMATE = "OPENAIR"
+COMMAND_SEATS = "VENTILATIONHEATING"
+COMMAND_STEERING_WHEEL = "STEERINGWHEELHEATING"
+
+SeatSetting = Literal["off", "low", "high"]
+
+# same inverted scale as direct seat control, 0 = seat feature not present
+_SEAT_TO_COMMAND: dict[str, int] = {"high": 1, "low": 2, "off": 3}
+_COMMAND_TO_SEAT: dict[int, SeatSetting] = {1: "high", 2: "low", 3: "off"}
+_SEAT_KEYS: dict[str, str] = {
+    "driver_heat": "mainHeat",
+    "driver_ventilation": "mainVentilation",
+    "passenger_heat": "copilotHeat",
+    "passenger_ventilation": "copilotVentilation",
+}
+_REAR_SEAT_KEYS = (
+    "lrSeatHeatState",
+    "rrSeatHeatState",
+    "lrSeatVentilationState",
+    "rrSeatVentilationState",
+    "lrThirdHeatState",
+    "rrThirdHeatState",
+    "lrThirdVentilationState",
+    "rrThirdVentilationState",
+)
+
+
+class PlanClimate(BaseModel):
+    """A/C settings of a plan."""
+
+    model_config = ConfigDict(frozen=True)
+
+    temperature: float
+    """Setpoint in °C."""
+    duration: int
+    """Run length in minutes (10-30)."""
+
+
+class PlanSeats(BaseModel):
+    """Front seat settings of a plan, ``None`` where the car lacks the feature."""
+
+    model_config = ConfigDict(frozen=True)
+
+    driver_heat: SeatSetting | None = None
+    driver_ventilation: SeatSetting | None = None
+    passenger_heat: SeatSetting | None = None
+    passenger_ventilation: SeatSetting | None = None
+
+    @property
+    def active(self) -> bool:
+        """Whether any seat is set to heat or ventilate."""
+        return any(value in ("low", "high") for value in self.model_dump().values())
 
 
 class StandbyPlanCommand(BydBaseModel):
@@ -44,6 +102,115 @@ class StandbyPlanCommand(BydBaseModel):
         decoded = _json_or_raw(value)
         return decoded if isinstance(decoded, dict) else {}
 
+    @classmethod
+    def climate(
+        cls,
+        temperature: float,
+        duration: int = 10,
+        *,
+        temp_offset: float = DEFAULT_TEMP_OFFSET_C,
+    ) -> StandbyPlanCommand:
+        """A/C at ``temperature`` °C for ``duration`` minutes, as the app saves it."""
+        scale = celsius_to_scale(temperature, offset=temp_offset)
+        return cls(
+            command_type=COMMAND_CLIMATE,
+            control_params_map={
+                "remoteMode": 4,
+                "timeSpan": minutes_to_time_span(duration),
+                "mainSettingTemp": scale,
+                "copilotSettingTemp": scale,
+                "cycleMode": 1,
+                "airConditioningMode": 1,
+                "airAccuracy": 1,
+            },
+        )
+
+    @classmethod
+    def seats(cls, settings: PlanSeats) -> StandbyPlanCommand:
+        """Front seat heat and ventilation.  ``None`` sends ``0`` (no such feature)."""
+        values = settings.model_dump()
+        params: dict[str, Any] = {
+            key: _SEAT_TO_COMMAND[values[field]] if values[field] else 0 for field, key in _SEAT_KEYS.items()
+        }
+        params.update(dict.fromkeys(_REAR_SEAT_KEYS, 0))
+        # chairType 8 only shows up in plans, likely "all seats"
+        params["chairType"] = 8
+        return cls(command_type=COMMAND_SEATS, control_params_map=params)
+
+    @classmethod
+    def steering_wheel(cls, on: bool = True) -> StandbyPlanCommand:
+        """Steering wheel heat; plans use their own command type for it."""
+        return cls(
+            command_type=COMMAND_STEERING_WHEEL,
+            control_params_map={"steeringWheelHeatState": 1 if on else 3, "chairType": 5},
+        )
+
+
+EXECUTE_ONCE = "0"
+EXECUTE_DAILY = "1"
+EXECUTE_WEEKLY = "2"
+
+PLAN_TYPE_PRESET = 1
+PLAN_TYPE_USER = 2
+
+_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
+
+
+class StandbySchedule(BaseModel):
+    """When a plan runs, as sent to ``save``.
+
+    Build one with :meth:`off`, :meth:`once`, :meth:`daily` or
+    :meth:`weekly`.  ``once`` and ``daily`` carry the run as an aware
+    datetime since the app sends those as ``executeTime``; ``weekly``
+    sends ``startTime`` and ``weeklyDays`` and the cloud works out the
+    next run.
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    repeat: Literal["off", "once", "daily", "weekly"]
+    at: dt.datetime | None = None
+    """Run time for ``once`` and ``daily`` (timezone aware)."""
+    start_time: str = ""
+    """``"HH:MM"`` for ``weekly``."""
+    weekly_days: tuple[int, ...] = ()
+    """``0`` = Monday … ``6`` = Sunday, for ``weekly``."""
+
+    @model_validator(mode="after")
+    def _check(self) -> StandbySchedule:
+        if self.repeat in ("once", "daily") and (self.at is None or self.at.tzinfo is None):
+            raise ValueError(f"{self.repeat} needs a timezone aware datetime")
+        if self.repeat == "weekly":
+            if not _HHMM.fullmatch(self.start_time):
+                raise ValueError(f"start_time must be HH:MM, got {self.start_time!r}")
+            if not self.weekly_days or any(not 0 <= day <= 6 for day in self.weekly_days):
+                raise ValueError(f"weekly_days must be 0-6, got {list(self.weekly_days)!r}")
+        return self
+
+    @classmethod
+    def off(cls) -> StandbySchedule:
+        """Not scheduled."""
+        return cls(repeat="off")
+
+    @classmethod
+    def once(cls, at: dt.datetime) -> StandbySchedule:
+        """Run once at ``at``."""
+        return cls(repeat="once", at=at)
+
+    @classmethod
+    def daily(cls, at: dt.datetime) -> StandbySchedule:
+        """Run every day at ``at``'s time, starting at ``at``.
+
+        The app sends the next occurrence of the time, so ``at`` should
+        be in the future.
+        """
+        return cls(repeat="daily", at=at)
+
+    @classmethod
+    def weekly(cls, start_time: str, weekly_days: Any) -> StandbySchedule:
+        """Run on ``weekly_days`` at ``start_time`` (``"HH:MM"``)."""
+        return cls(repeat="weekly", start_time=start_time, weekly_days=tuple(sorted(set(weekly_days))))
+
 
 class StandbyPlan(BydBaseModel):
     """A preconditioning plan (one ``list`` entry)."""
@@ -58,12 +225,13 @@ class StandbyPlan(BydBaseModel):
     plan_type: int | None = None
     default_plan: int | None = None
     execute_type: str | None = None
+    """``"0"`` = once, ``"1"`` = every day, ``"2"`` = weekly."""
     start_time: str = ""
-    """Scheduled start as ``"HH:MM"``, empty when not scheduled."""
+    """Weekly start as ``"HH:MM"``, empty when not scheduled weekly."""
     weekly_days: list[int] = Field(default_factory=list)
     """Days the plan runs, ``0`` = Monday … ``6`` = Sunday."""
     execute_time: BydTimestamp = None
-    """Next run as computed by the cloud, ``None`` when not scheduled."""
+    """Next run, ``None`` when not scheduled."""
     rec_execute_time: BydTimestamp = None
     time_zone: str | None = None
     commands: list[StandbyPlanCommand] = Field(default_factory=list)
@@ -83,6 +251,17 @@ class StandbyPlan(BydBaseModel):
     def _id_to_str(cls, value: Any) -> Any:
         return str(value) if value is not None else ""
 
+    @field_validator("start_time", "plan_name", mode="before")
+    @classmethod
+    def _none_to_empty(cls, value: Any) -> Any:
+        # a plan that was never scheduled has startTime null
+        return "" if value is None else value
+
+    @field_validator("execute_type", mode="before")
+    @classmethod
+    def _type_to_str(cls, value: Any) -> Any:
+        return str(value) if value is not None else None
+
     @field_validator("weekly_days", mode="before")
     @classmethod
     def _parse_days(cls, value: Any) -> Any:
@@ -92,10 +271,65 @@ class StandbyPlan(BydBaseModel):
             return sorted({int(day) for day in value.split(",") if day.strip().isdigit()})
         return value
 
+    def command(self, command_type: str) -> StandbyPlanCommand | None:
+        """The plan's command of ``command_type``, if it has one."""
+        return next((command for command in self.commands if command.command_type == command_type), None)
+
+    def climate(self, *, temp_offset: float = DEFAULT_TEMP_OFFSET_C) -> PlanClimate | None:
+        """The plan's A/C settings, ``None`` when it doesn't run the A/C."""
+        command = self.command(COMMAND_CLIMATE)
+        if command is None:
+            return None
+        params = command.control_params_map
+        scale = params.get("mainSettingTemp")
+        span = params.get("timeSpan")
+        return PlanClimate(
+            temperature=float(scale) + temp_offset if isinstance(scale, int) else temp_offset + 1,
+            duration=5 + 5 * span if isinstance(span, int) and 1 <= span <= 5 else 10,
+        )
+
+    @property
+    def seats(self) -> PlanSeats | None:
+        """The plan's front seat settings, ``None`` when it has none."""
+        command = self.command(COMMAND_SEATS)
+        if command is None:
+            return None
+        params = command.control_params_map
+        return PlanSeats(**{field: _COMMAND_TO_SEAT.get(params.get(key, 0)) for field, key in _SEAT_KEYS.items()})
+
+    @property
+    def steering_wheel_heat(self) -> bool:
+        """Whether the plan heats the steering wheel."""
+        command = self.command(COMMAND_STEERING_WHEEL)
+        return command is not None and command.control_params_map.get("steeringWheelHeatState") == 1
+
+    @property
+    def preset(self) -> bool:
+        """The built-in plan, which can't be deleted."""
+        return self.plan_type == PLAN_TYPE_PRESET
+
     @property
     def scheduled(self) -> bool:
-        """Whether the plan has a time and at least one day to run on."""
-        return bool(self.start_time and self.weekly_days)
+        """Whether the plan is set to run.
+
+        Weekly needs both a time and days; days without a time (or the
+        other way round) is saved but never runs.
+        """
+        if self.execute_type == EXECUTE_WEEKLY:
+            return bool(self.start_time and self.weekly_days)
+        return self.execute_time is not None
+
+    @property
+    def schedule(self) -> StandbySchedule:
+        """The plan's current schedule, for saving it back unchanged."""
+        if not self.scheduled:
+            return StandbySchedule.off()
+        if self.execute_type == EXECUTE_WEEKLY:
+            return StandbySchedule.weekly(self.start_time, self.weekly_days)
+        assert self.execute_time is not None
+        if self.execute_type == EXECUTE_DAILY:
+            return StandbySchedule.daily(self.execute_time)
+        return StandbySchedule.once(self.execute_time)
 
 
 class StandbyPlanList(BydBaseModel):

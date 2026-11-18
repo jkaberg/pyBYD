@@ -47,7 +47,15 @@ from pybyd.models.realtime import (
     WindowState,
 )
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
-from pybyd.models.standby import StandbyPlan, StandbyPlanCommand, StandbyPlanList, StandbyPlanRunResult
+from pybyd.models.standby import (
+    PlanClimate,
+    PlanSeats,
+    StandbyPlan,
+    StandbyPlanCommand,
+    StandbyPlanList,
+    StandbyPlanRunResult,
+    StandbySchedule,
+)
 from pybyd.models.token import AuthToken
 from pybyd.models.vehicle import EmpowerRange, EnergyType, Vehicle
 
@@ -63,10 +71,13 @@ __all__ = [
     "BookingList",
     "ChargingStatus",
     "ClimateBooking",
+    "PlanClimate",
+    "PlanSeats",
     "StandbyPlan",
     "StandbyPlanCommand",
     "StandbyPlanList",
     "StandbyPlanRunResult",
+    "StandbySchedule",
     "CommandGateRule",
     "CommandGateVerdict",
     "ClimateScheduleParams",

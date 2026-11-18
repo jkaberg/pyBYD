@@ -7,7 +7,6 @@ import contextlib
 import functools
 import logging
 import random
-import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -80,7 +79,14 @@ from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
-from pybyd.models.standby import StandbyPlan, StandbyPlanList, StandbyPlanRunResult
+from pybyd.models.standby import (
+    PLAN_TYPE_USER,
+    StandbyPlan,
+    StandbyPlanCommand,
+    StandbyPlanList,
+    StandbyPlanRunResult,
+    StandbySchedule,
+)
 from pybyd.models.vehicle import EnergyType, Vehicle
 from pybyd.session import Session
 
@@ -89,7 +95,6 @@ if TYPE_CHECKING:
 
 _logger = logging.getLogger(__name__)
 
-_HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 T = TypeVar("T")
 _M = TypeVar("_M", bound=BydBaseModel)
@@ -1899,10 +1904,7 @@ class BydClient:
         )
 
     async def get_standby_plans(self, vin: str) -> StandbyPlanList:
-        """Fetch the preconditioning plans app 3.6.0 schedules climate with.
-
-        Needs the owner account; the guest account gets ``1001``.
-        """
+        """Fetch the preconditioning plans app 3.6.0 schedules climate with."""
         return await self._authed_call(_standby_api.fetch_standby_plans, vin)
 
     async def save_standby_plan(
@@ -1910,30 +1912,71 @@ class BydClient:
         vin: str,
         plan: StandbyPlan,
         *,
-        start_time: str | None = None,
-        weekly_days: Sequence[int] | None = None,
+        schedule: StandbySchedule | None = None,
     ) -> StandbyPlanList:
-        """Save a plan's commands and schedule, then return the fresh plans.
+        """Save a plan's name, commands and schedule, then return the fresh plans.
 
-        ``start_time`` is ``"HH:MM"`` and ``weekly_days`` uses ``0`` =
-        Monday … ``6`` = Sunday.  ``None`` keeps the plan's current value;
-        pass ``""`` and ``[]`` to unschedule.  A time without days is
-        not scheduled by the cloud.  Edit ``plan.commands`` (eg the
-        ``OPENAIR`` ``controlParamsMap``) to change what the plan does.
+        ``schedule`` of ``None`` keeps the plan's current one; use
+        :meth:`StandbySchedule.off` to unschedule.  Edit ``plan.commands``
+        (eg the ``OPENAIR`` ``controlParamsMap``) to change what the plan
+        does.  Saving with ``default_plan=1`` makes it the default, the
+        cloud clears the flag on the others.
         """
-        time_value = plan.start_time if start_time is None else start_time
-        days = plan.weekly_days if weekly_days is None else list(weekly_days)
-        if time_value and not _HHMM.fullmatch(time_value):
-            raise ValueError(f"start_time must be HH:MM, got {time_value!r}")
-        if any(not 0 <= day <= 6 for day in days):
-            raise ValueError(f"weekly_days must be 0-6, got {days!r}")
         await self._authed_call(
             _standby_api.save_standby_plan,
             vin,
             plan,
-            start_time=time_value,
-            weekly_days=days,
+            schedule if schedule is not None else plan.schedule,
         )
+        return await self.get_standby_plans(vin)
+
+    async def create_standby_plan(
+        self,
+        vin: str,
+        name: str,
+        commands: Sequence[StandbyPlanCommand],
+        *,
+        schedule: StandbySchedule | None = None,
+    ) -> StandbyPlan:
+        """Create a user plan and return it.
+
+        ``commands`` are what the plan does, eg copied from the preset
+        plan.  ``save`` doesn't return the new id, so it's picked out of
+        the next ``list``.
+        """
+        if not commands:
+            raise ValueError("a plan needs at least one command")
+        before = {plan.id for plan in (await self.get_standby_plans(vin)).plans}
+        plan = StandbyPlan(
+            plan_name=name,
+            plan_type=PLAN_TYPE_USER,
+            default_plan=0,
+            commands=[command.model_copy(update={"command_id": None}) for command in commands],
+        )
+        await self._authed_call(
+            _standby_api.save_standby_plan,
+            vin,
+            plan,
+            schedule or StandbySchedule.off(),
+        )
+        after = await self.get_standby_plans(vin)
+        created = [p for p in after.plans if p.id not in before]
+        if len(created) != 1:
+            raise BydError(f"could not find the created plan {name!r} in the plan list")
+        return created[0]
+
+    async def set_default_standby_plan(self, vin: str, plan_id: str) -> StandbyPlanList:
+        """Make a plan the default, then return the fresh plans."""
+        await self._authed_call(_standby_api.set_default_standby_plan, vin, plan_id)
+        return await self.get_standby_plans(vin)
+
+    async def delete_standby_plan(self, vin: str, plan_id: str) -> StandbyPlanList:
+        """Delete a user plan, then return the fresh plans.
+
+        The preset plan can't be deleted in the app; unschedule it with
+        :meth:`save_standby_plan` instead.
+        """
+        await self._authed_call(_standby_api.delete_standby_plan, vin, plan_id)
         return await self.get_standby_plans(vin)
 
     async def run_standby_plan(
@@ -1946,10 +1989,9 @@ class BydClient:
     ) -> StandbyPlanRunResult:
         """Run a plan now, keeping its schedule.
 
-        The final ``res`` of ``send-result`` hasn't been captured yet; the
-        app stops polling while it still says ``1`` even though the climate
-        comes on.  So a result still at ``1`` is returned as is, and only
-        a terminal failure raises.
+        ``send-result`` goes from ``res`` 1 to 2 after about six seconds.
+        A result still at ``1`` when polling gives up is returned as is,
+        since the app itself stops polling there; other values raise.
         """
 
         async def _call() -> StandbyPlanRunResult:
