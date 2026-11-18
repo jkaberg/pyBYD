@@ -364,6 +364,9 @@ class ClimateStartParams(ControlParams):
     air_conditioning_mode: int = Field(default=1, ge=0)
     wind_level: int | None = Field(default=None, ge=0)
 
+    air_set: str | None = Field(default=None, exclude=True)
+    """OPENAIR operation: ``None`` = start, ``"14"`` = adjust the setpoint of a running session."""
+
     @model_validator(mode="after")
     def _check_temp_range(self) -> ClimateStartParams:
         for value in (self.temperature, self.copilot_temperature):
@@ -386,9 +389,9 @@ class ClimateStartParams(ControlParams):
         # Mirror driver temp to copilot when copilot was not explicitly set.
         if "copilotSettingTemp" not in data and "mainSettingTemp" in data:
             data["copilotSettingTemp"] = data["mainSettingTemp"]
-        # Immediate mode requires airSet: null in the payload.
+        # Immediate mode always carries airSet (null to start a session).
         if self.remote_mode == 4:
-            data["airSet"] = None
+            data["airSet"] = self.air_set
         return data
 
 

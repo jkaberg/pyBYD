@@ -192,6 +192,16 @@ class TestEvaluateCommandGatePublicSurface:
         assert verdict.supported is True
         assert verdict.reason == "supported"
 
+    def test_open_windows_blocked_on_499_only(self):
+        """ATTO 3 EVO shape (#20): 499 on, openWindowLearnInfo off → no open."""
+        verdict = evaluate_command_gate(
+            RemoteCommand.OPEN_WINDOWS,
+            _caps_with(["1026"]),
+            learn_info={"openWindowLearnInfo": 0, "openWindow499LearnInfo": 1},
+        )
+        assert verdict.supported is False
+        assert verdict.reason == "learn_info_missing"
+
     def test_open_windows_backward_compat_without_learn_info(self):
         """Without learn_info, OPEN_WINDOWS stays supported on 1026 only."""
         verdict = evaluate_command_gate(

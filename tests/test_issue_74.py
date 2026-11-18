@@ -141,3 +141,84 @@ def test_compressor_state(raw: int | None, expected: bool | None) -> None:
     # issue #64: Dolphin Surf dumps show acSwitch 1=off, 2=on
     hvac = HvacStatus.model_validate({} if raw is None else {"acSwitch": raw})
     assert hvac.is_compressor_on is expected
+
+
+async def test_running_setpoint_change_uses_air_set_14() -> None:
+    # issue #20: airSet null restarts the session and its auto-off timer
+    engine = VehicleStateEngine("VIN", Vehicle(vin="VIN"))
+    sent: list[ClimateStartParams] = []
+    cap = _capture_cap(engine, sent)
+    await engine.update_hvac(HvacStatus.model_validate({"status": 1, "cycleChoice": 1, "windPosition": 3, "pm": 5}))
+    await cap.start(temperature=22, duration=10)
+    assert sent[-1].to_control_params_map()["airSet"] == "14"
+    await cap.start(temperature=22, duration=10, cycle_mode=1, fan_level=3)
+    assert sent[-1].to_control_params_map()["airSet"] == "14"
+    await cap.start(temperature=22, duration=10, cycle_mode=2)
+    assert sent[-1].to_control_params_map()["airSet"] is None
+
+
+async def test_start_when_off_sends_air_set_null() -> None:
+    engine = VehicleStateEngine("VIN", Vehicle(vin="VIN"))
+    sent: list[ClimateStartParams] = []
+    cap = _capture_cap(engine, sent)
+    await engine.update_hvac(HvacStatus.model_validate({"status": 2, "pm": 5}))
+    await cap.start(temperature=22, duration=10)
+    data = sent[-1].to_control_params_map()
+    assert "airSet" in data and data["airSet"] is None
+
+
+async def test_start_fetches_range_when_hvac_unknown() -> None:
+    # issue #20: the first start after startup used the 15-31 scale on a 17-33 car
+    engine = VehicleStateEngine("VIN", Vehicle(vin="VIN"))
+    sent: list[ClimateStartParams] = []
+
+    async def start_fn(vin: str, *, params: ClimateStartParams) -> None:
+        sent.append(params)
+
+    async def execute(cmd, specs):  # type: ignore[no-untyped-def]
+        await cmd()
+
+    async def refresh() -> HvacStatus:
+        data = HvacStatus.model_validate({"status": 2, "vdeTempRangeMin": 17, "vdeTempRangeMax": 33, "pm": 5})
+        await engine.update_hvac(data)
+        return data
+
+    cap = HvacCapability(
+        start_fn=start_fn,
+        stop_fn=start_fn,
+        schedule_fn=start_fn,
+        vin="VIN",
+        execute_command=execute,
+        get_state=lambda: engine.snapshot,
+        refresh_fn=refresh,
+    )
+    await cap.start(temperature=21, duration=10)
+    assert sent[-1].to_control_params_map()["mainSettingTemp"] == 5
+
+
+async def test_start_falls_back_when_refresh_fails() -> None:
+    from pybyd.exceptions import BydError
+
+    engine = VehicleStateEngine("VIN", Vehicle(vin="VIN"))
+    sent: list[ClimateStartParams] = []
+
+    async def start_fn(vin: str, *, params: ClimateStartParams) -> None:
+        sent.append(params)
+
+    async def execute(cmd, specs):  # type: ignore[no-untyped-def]
+        await cmd()
+
+    async def refresh() -> HvacStatus:
+        raise BydError("boom")
+
+    cap = HvacCapability(
+        start_fn=start_fn,
+        stop_fn=start_fn,
+        schedule_fn=start_fn,
+        vin="VIN",
+        execute_command=execute,
+        get_state=lambda: engine.snapshot,
+        refresh_fn=refresh,
+    )
+    await cap.start(temperature=21, duration=10)
+    assert sent[-1].to_control_params_map()["mainSettingTemp"] == 7
