@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import secrets
 import time
 from typing import Any
@@ -21,7 +22,14 @@ from pybyd.config import BydConfig
 from pybyd.exceptions import BydAuthenticationError
 from pybyd.models.token import AuthToken
 
-_APP_NAME = f"pyBYD+{_pybyd_version}"
+
+def _clean_app_version(version: str) -> str:
+    """Strip PEP 440 dev/local suffixes so BYD accepts ``appName``."""
+    match = re.match(r"^\d+(?:\.\d+){0,2}", version)
+    return match.group(0) if match else "0.0.0"
+
+
+_APP_NAME = f"pyBYD+{_clean_app_version(_pybyd_version)}"
 
 _logger = logging.getLogger(__name__)
 
