@@ -161,7 +161,7 @@ def test_daily_moves_past_time_to_next_day() -> None:
 
 
 def test_create_payload_has_no_id() -> None:
-    plan = StandbyPlan(plan_name="Test plan", plan_type=2, default_plan=0, commands=[])
+    plan = StandbyPlan(plan_name="Test plan", plan_type=2, default_plan=0, commands=[StandbyPlanCommand.climate(21)])
     inner = build_save_inner(_CONFIG, "VIN", plan, StandbySchedule.off())
     assert "id" not in inner
     assert inner["planType"] == 2
@@ -313,7 +313,7 @@ _CAPTURED_COMMANDS = [
     },
 ]
 _CAPTURED_SEATS = PlanSeats(
-    driver_heat="high", driver_ventilation="off", passenger_heat="off", passenger_ventilation="high"
+    driver_heat=True, driver_ventilation=False, passenger_heat=False, passenger_ventilation=True
 )
 
 
@@ -349,7 +349,28 @@ def test_readers_without_commands() -> None:
 
 
 def test_absent_seat_feature_is_zero() -> None:
-    command = StandbyPlanCommand.seats(PlanSeats(driver_heat="low", passenger_heat="off"))
-    assert command.control_params_map["mainHeat"] == 2
+    command = StandbyPlanCommand.seats(PlanSeats(driver_heat=True, passenger_heat=False))
+    assert command.control_params_map["mainHeat"] == 1
+    assert command.control_params_map["copilotHeat"] == 3
     assert command.control_params_map["mainVentilation"] == 0
-    assert PlanSeats(passenger_heat="off").active is False
+    assert PlanSeats(passenger_heat=False).active is False
+
+
+def test_recirculation() -> None:
+    # captured: 22 °C with internal circulation saves cycleMode 2 (#91)
+    command = StandbyPlanCommand.climate(20, 10, recirculation=True)
+    assert command.control_params_map["cycleMode"] == 2
+    plan = StandbyPlan(commands=[command])
+    assert plan.climate() == PlanClimate(temperature=20, duration=10, recirculation=True)
+
+
+def test_save_puts_climate_first() -> None:
+    plan = StandbyPlan(commands=[StandbyPlanCommand.steering_wheel(), StandbyPlanCommand.climate(21)])
+    inner = build_save_inner(_CONFIG, "VIN", plan, StandbySchedule.off())
+    assert [c["commandType"] for c in json.loads(inner["controlParams"])] == ["OPENAIR", "STEERINGWHEELHEATING"]
+
+
+def test_save_needs_climate() -> None:
+    plan = StandbyPlan(commands=[StandbyPlanCommand.steering_wheel()])
+    with pytest.raises(ValueError, match="OPENAIR"):
+        build_save_inner(_CONFIG, "VIN", plan, StandbySchedule.off())

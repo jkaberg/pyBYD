@@ -1,6 +1,6 @@
 """Data models for BYD API responses."""
 
-from pybyd._constants import VALID_CLIMATE_DURATIONS, minutes_to_time_span
+from pybyd._constants import DEFAULT_TEMP_OFFSET_C, VALID_CLIMATE_DURATIONS, minutes_to_time_span
 from pybyd.models._base import BydBaseModel, BydEnum, BydTimestamp, parse_byd_timestamp
 from pybyd.models.booking import BookingList, ClimateBooking
 from pybyd.models.charging import ChargingStatus
@@ -110,6 +110,7 @@ __all__ = [
     "SmartChargingSchedule",
     "StearingWheelHeat",
     "TirePressureUnit",
+    "DEFAULT_TEMP_OFFSET_C",
     "VALID_CLIMATE_DURATIONS",
     "VehicleCapabilities",
     "Vehicle",

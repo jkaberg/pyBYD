@@ -80,6 +80,7 @@ from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
 from pybyd.models.standby import (
+    COMMAND_CLIMATE,
     PLAN_TYPE_USER,
     StandbyPlan,
     StandbyPlanCommand,
@@ -1941,11 +1942,12 @@ class BydClient:
         """Create a user plan and return it.
 
         ``commands`` are what the plan does, eg copied from the preset
-        plan.  ``save`` doesn't return the new id, so it's picked out of
-        the next ``list``.
+        plan.  It must include the A/C (``OPENAIR``); seats and steering
+        wheel only go on top of it.  ``save`` doesn't return the new id,
+        so it's picked out of the next ``list``.
         """
-        if not commands:
-            raise ValueError("a plan needs at least one command")
+        if not any(command.command_type == COMMAND_CLIMATE for command in commands):
+            raise ValueError("a plan needs an OPENAIR command")
         before = {plan.id for plan in (await self.get_standby_plans(vin)).plans}
         plan = StandbyPlan(
             plan_name=name,

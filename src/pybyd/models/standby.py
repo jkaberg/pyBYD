@@ -5,6 +5,9 @@ App 3.6.0 schedules climate through these plans instead of
 ``VENTILATIONHEATING``, ``STEERINGWHEELHEATING`` with their
 ``controlParamsMap``) and an optional schedule: once, every day or
 weekly.  The next run comes back in ``executeTime`` (#91).
+
+Every plan runs the A/C; seats and steering wheel heat are extras on
+top of it, and the app has no way to save a plan without ``OPENAIR``.
 """
 
 from __future__ import annotations
@@ -16,8 +19,9 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from pybyd._constants import DEFAULT_TEMP_OFFSET_C, celsius_to_scale, minutes_to_time_span
+from pybyd._constants import DEFAULT_TEMP_OFFSET_C, minutes_to_time_span, time_span_to_minutes
 from pybyd.models._base import BydBaseModel, BydTimestamp
+from pybyd.models.control import ClimateStartParams, SeatClimateParams
 
 
 def _json_or_raw(value: Any) -> Any:
@@ -34,27 +38,19 @@ COMMAND_CLIMATE = "OPENAIR"
 COMMAND_SEATS = "VENTILATIONHEATING"
 COMMAND_STEERING_WHEEL = "STEERINGWHEELHEATING"
 
-SeatSetting = Literal["off", "low", "high"]
-
-# same inverted scale as direct seat control, 0 = seat feature not present
-_SEAT_TO_COMMAND: dict[str, int] = {"high": 1, "low": 2, "off": 3}
-_COMMAND_TO_SEAT: dict[int, SeatSetting] = {1: "high", 2: "low", 3: "off"}
-_SEAT_KEYS: dict[str, str] = {
-    "driver_heat": "mainHeat",
-    "driver_ventilation": "mainVentilation",
-    "passenger_heat": "copilotHeat",
-    "passenger_ventilation": "copilotVentilation",
+# plans only do on/off: 1 = on, 3 = off, 0 = seat feature not present
+_SEAT_ON = 1
+_SEAT_OFF = 3
+_COMMAND_TO_SEAT: dict[int, bool] = {1: True, 2: True, 3: False}
+# PlanSeats field -> SeatClimateParams field
+_SEAT_PARAMS: dict[str, str] = {
+    "driver_heat": "main_heat",
+    "driver_ventilation": "main_ventilation",
+    "passenger_heat": "copilot_heat",
+    "passenger_ventilation": "copilot_ventilation",
 }
-_REAR_SEAT_KEYS = (
-    "lrSeatHeatState",
-    "rrSeatHeatState",
-    "lrSeatVentilationState",
-    "rrSeatVentilationState",
-    "lrThirdHeatState",
-    "rrThirdHeatState",
-    "lrThirdVentilationState",
-    "rrThirdVentilationState",
-)
+# plans carry the seat levels only, chairType 8 instead of a single seat
+_SEAT_PLAN_EXCLUDE = {"chair_type", "remote_mode", "steering_wheel_heat_state"}
 
 
 class PlanClimate(BaseModel):
@@ -66,6 +62,8 @@ class PlanClimate(BaseModel):
     """Setpoint in °C."""
     duration: int
     """Run length in minutes (10-30)."""
+    recirculation: bool = False
+    """Internal air circulation (``cycleMode`` 2) instead of external."""
 
 
 class PlanSeats(BaseModel):
@@ -73,15 +71,15 @@ class PlanSeats(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    driver_heat: SeatSetting | None = None
-    driver_ventilation: SeatSetting | None = None
-    passenger_heat: SeatSetting | None = None
-    passenger_ventilation: SeatSetting | None = None
+    driver_heat: bool | None = None
+    driver_ventilation: bool | None = None
+    passenger_heat: bool | None = None
+    passenger_ventilation: bool | None = None
 
     @property
     def active(self) -> bool:
         """Whether any seat is set to heat or ventilate."""
-        return any(value in ("low", "high") for value in self.model_dump().values())
+        return any(self.model_dump().values())
 
 
 class StandbyPlanCommand(BydBaseModel):
@@ -108,31 +106,31 @@ class StandbyPlanCommand(BydBaseModel):
         temperature: float,
         duration: int = 10,
         *,
+        recirculation: bool = False,
         temp_offset: float = DEFAULT_TEMP_OFFSET_C,
     ) -> StandbyPlanCommand:
         """A/C at ``temperature`` °C for ``duration`` minutes, as the app saves it."""
-        scale = celsius_to_scale(temperature, offset=temp_offset)
-        return cls(
-            command_type=COMMAND_CLIMATE,
-            control_params_map={
-                "remoteMode": 4,
-                "timeSpan": minutes_to_time_span(duration),
-                "mainSettingTemp": scale,
-                "copilotSettingTemp": scale,
-                "cycleMode": 1,
-                "airConditioningMode": 1,
-                "airAccuracy": 1,
-            },
-        )
+        params = ClimateStartParams(
+            temperature=temperature,
+            temp_offset=temp_offset,
+            time_span=minutes_to_time_span(duration),
+            cycle_mode=2 if recirculation else 1,
+        ).to_control_params_map()
+        # airSet belongs to the direct start, plans don't send it
+        params.pop("airSet", None)
+        return cls(command_type=COMMAND_CLIMATE, control_params_map=params)
 
     @classmethod
     def seats(cls, settings: PlanSeats) -> StandbyPlanCommand:
-        """Front seat heat and ventilation.  ``None`` sends ``0`` (no such feature)."""
+        """Front seat heat and ventilation, on or off.  ``None`` sends ``0`` (no such feature)."""
         values = settings.model_dump()
-        params: dict[str, Any] = {
-            key: _SEAT_TO_COMMAND[values[field]] if values[field] else 0 for field, key in _SEAT_KEYS.items()
-        }
-        params.update(dict.fromkeys(_REAR_SEAT_KEYS, 0))
+        seat_params = SeatClimateParams.model_validate(
+            {
+                param: 0 if values[field] is None else _SEAT_ON if values[field] else _SEAT_OFF
+                for field, param in _SEAT_PARAMS.items()
+            }
+        )
+        params: dict[str, Any] = seat_params.model_dump(by_alias=True, exclude=_SEAT_PLAN_EXCLUDE)
         # chairType 8 only shows up in plans, likely "all seats"
         params["chairType"] = 8
         return cls(command_type=COMMAND_SEATS, control_params_map=params)
@@ -142,7 +140,7 @@ class StandbyPlanCommand(BydBaseModel):
         """Steering wheel heat; plans use their own command type for it."""
         return cls(
             command_type=COMMAND_STEERING_WHEEL,
-            control_params_map={"steeringWheelHeatState": 1 if on else 3, "chairType": 5},
+            control_params_map={"steeringWheelHeatState": _SEAT_ON if on else _SEAT_OFF, "chairType": 5},
         )
 
 
@@ -285,7 +283,8 @@ class StandbyPlan(BydBaseModel):
         span = params.get("timeSpan")
         return PlanClimate(
             temperature=float(scale) + temp_offset if isinstance(scale, int) else temp_offset + 1,
-            duration=5 + 5 * span if isinstance(span, int) and 1 <= span <= 5 else 10,
+            duration=(time_span_to_minutes(span) if isinstance(span, int) else None) or 10,
+            recirculation=params.get("cycleMode") == 2,
         )
 
     @property
@@ -295,13 +294,19 @@ class StandbyPlan(BydBaseModel):
         if command is None:
             return None
         params = command.control_params_map
-        return PlanSeats(**{field: _COMMAND_TO_SEAT.get(params.get(key, 0)) for field, key in _SEAT_KEYS.items()})
+        keys = SeatClimateParams.model_fields
+        return PlanSeats(
+            **{
+                field: _COMMAND_TO_SEAT.get(params.get(keys[param].alias or param, 0))
+                for field, param in _SEAT_PARAMS.items()
+            }
+        )
 
     @property
     def steering_wheel_heat(self) -> bool:
         """Whether the plan heats the steering wheel."""
         command = self.command(COMMAND_STEERING_WHEEL)
-        return command is not None and command.control_params_map.get("steeringWheelHeatState") == 1
+        return command is not None and command.control_params_map.get("steeringWheelHeatState") == _SEAT_ON
 
     @property
     def preset(self) -> bool:

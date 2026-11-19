@@ -23,6 +23,7 @@ from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, p
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.models.standby import (
+    COMMAND_CLIMATE,
     EXECUTE_DAILY,
     EXECUTE_ONCE,
     EXECUTE_WEEKLY,
@@ -113,8 +114,14 @@ def build_save_inner(
 
     A plan without an ``id`` is created; the response doesn't carry the
     new id, only the next ``list`` does.  ``commandId`` is left out of
-    ``controlParams`` as the app does.
+    ``controlParams`` as the app does, and ``OPENAIR`` goes first.
+
+    Raises ``ValueError`` when the plan has no ``OPENAIR`` command, since
+    every plan runs the A/C.
     """
+    commands = sorted(plan.commands, key=lambda command: command.command_type != COMMAND_CLIMATE)
+    if not commands or commands[0].command_type != COMMAND_CLIMATE:
+        raise ValueError("a plan needs an OPENAIR command, seats and steering wheel only go on top of the A/C")
     inner: dict[str, Any] = dict(build_inner_base(config, vin=vin))
     if plan.id:
         inner["id"] = _plan_id(plan.id)
@@ -127,7 +134,7 @@ def build_save_inner(
             "controlParams": json.dumps(
                 [
                     {"commandType": command.command_type, "controlParamsMap": command.control_params_map}
-                    for command in plan.commands
+                    for command in commands
                 ],
                 separators=(",", ":"),
                 ensure_ascii=False,

@@ -21,6 +21,7 @@ from pybyd.exceptions import (
     BydTransportError,
 )
 from pybyd.models import (
+    DEFAULT_TEMP_OFFSET_C,
     VALID_CLIMATE_DURATIONS,
     AcCurrentLimit,
     ChargingStatus,
@@ -80,6 +81,7 @@ __all__ = [
     "SeatLevel",
     "SeatPosition",
     "TirePressureUnit",
+    "DEFAULT_TEMP_OFFSET_C",
     "VALID_CLIMATE_DURATIONS",
     "VehicleCapabilities",
     "Vehicle",
