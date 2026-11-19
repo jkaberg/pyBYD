@@ -23,9 +23,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field as dc_field
-from typing import Any
+from typing import Any, TypeVar
 
 from pybyd._validators import apply_gps_filters, apply_hvac_filters, apply_realtime_filters
+from pybyd.models._base import BydBaseModel, BydEnum
 from pybyd.models.charging import ChargingStatus
 from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
@@ -38,6 +39,34 @@ _logger = logging.getLogger(__name__)
 
 # Sentinel for missing attributes
 _MISSING: object = object()
+_ModelT = TypeVar("_ModelT", bound=BydBaseModel)
+
+
+def _build_section_patch(base: _ModelT, partial: _ModelT) -> _ModelT | None:
+    """Merge non-sentinel fields set on *partial* onto *base*."""
+    updates: dict[str, Any] = {}
+    for field_name in partial.model_fields_set:
+        if field_name in ("raw", "vin"):
+            continue
+        val = getattr(partial, field_name, None)
+        if val is None:
+            continue
+        if isinstance(val, BydEnum) and val.name in ("UNKNOWN", "NO_DATA"):
+            continue
+        updates[field_name] = val
+
+    if not updates:
+        return None
+
+    for state_field in ("charge_state", "charging_state"):
+        if state_field in updates and int(updates[state_field]) != 1 and "charge_power" not in updates:
+            if hasattr(base, "charge_power"):
+                updates["charge_power"] = None
+            if hasattr(base, "charge_power_unit"):
+                updates["charge_power_unit"] = None
+
+    updates["raw"] = {**base.raw, **partial.raw}
+    return base.model_copy(update=updates)
 
 
 # ------------------------------------------------------------------
@@ -230,6 +259,54 @@ class VehicleStateEngine:
             self._base_realtime = validated
             self._reconcile_projections("realtime", validated)
             self._rebuild_snapshot()
+
+    async def patch_realtime(self, partial: VehicleRealtimeData) -> None:
+        """Merge only the fields set on *partial* into the current base realtime."""
+        await self.patch_status_push(realtime=partial)
+
+    async def patch_status_push(
+        self,
+        *,
+        realtime: VehicleRealtimeData | None = None,
+        hvac: HvacStatus | None = None,
+        charging: ChargingStatus | None = None,
+    ) -> None:
+        """Atomically merge partial ``vehicleStatusPush`` models into active base sections.
+
+        Sections whose base snapshot has not been populated yet are skipped so
+        a partial push never exposes a half-empty base model. Sentinel-stripped
+        ``None`` values and ``UNKNOWN`` enum fallbacks in *partial* are ignored
+        so default DTO fields cannot erase previously known readings, and
+        ``raw`` dicts are merged rather than replaced.
+        """
+        async with self._lock:
+            changed = False
+
+            if realtime is not None and self._base_realtime is not None:
+                patched_rt = _build_section_patch(self._base_realtime, realtime)
+                if patched_rt is not None:
+                    validated_rt = apply_realtime_filters(self._base_realtime, patched_rt)
+                    self._base_realtime = validated_rt
+                    self._reconcile_projections("realtime", validated_rt)
+                    changed = True
+
+            if hvac is not None and self._base_hvac is not None:
+                patched_hvac = _build_section_patch(self._base_hvac, hvac)
+                if patched_hvac is not None:
+                    validated_hvac = apply_hvac_filters(self._base_hvac, patched_hvac)
+                    self._base_hvac = validated_hvac
+                    self._reconcile_projections("hvac", validated_hvac)
+                    changed = True
+
+            if charging is not None and self._base_charging is not None:
+                patched_charging = _build_section_patch(self._base_charging, charging)
+                if patched_charging is not None:
+                    self._base_charging = patched_charging
+                    self._reconcile_projections("charging", patched_charging)
+                    changed = True
+
+            if changed:
+                self._rebuild_snapshot()
 
     async def update_hvac(self, data: HvacStatus) -> None:
         """Merge incoming HVAC data through centralized filters and guard window."""

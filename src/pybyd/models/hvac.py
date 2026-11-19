@@ -78,6 +78,8 @@ class HvacStatus(BydBaseModel):
 
     _KEY_ALIASES: ClassVar[dict[str, str]] = {
         **COMMON_KEY_ALIASES,
+        "airRunState": "status",
+        "cycleModel": "cycleChoice",
     }
 
     _SENTINEL_RULES: ClassVar[dict[str, Callable[..., bool]]] = {
