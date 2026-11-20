@@ -81,6 +81,13 @@ class RemoteControlResult(BydBaseModel):
     control_state: ControlState = Field(default=ControlState.PENDING, validation_alias="controlState")
     success: bool = False
     request_serial: str | None = Field(default=None, validation_alias="requestSerial")
+    battery_heat_result: int | None = None
+    battery_heat_result_message: str | None = None
+    battery_temperature: int | None = None
+    expect_heat_minute: int | None = None
+    heat_surplus_minute: int | None = None
+    heat_status: int | None = None
+    need_heat_index: int | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -104,6 +111,18 @@ class RemoteControlResult(BydBaseModel):
                 state = ControlState.FAILURE
             merged["controlState"] = int(state)
             merged.setdefault("success", state == ControlState.SUCCESS)
+
+        # Dedicated battery-heat polling can return ``res=2`` while carrying a
+        # business rejection in ``batteryHeatResult`` (2=not needed, 6=conditions
+        # not met). Surface those as FAILURE instead of a false success.
+        raw_heat_res = merged.get("batteryHeatResult")
+        if raw_heat_res is not None:
+            try:
+                if int(raw_heat_res) in (2, 6):
+                    merged["controlState"] = int(ControlState.FAILURE)
+                    merged["success"] = False
+            except (TypeError, ValueError):
+                pass
 
         # Standard polled format: {"controlState": 0/1/2, ...}
         if "controlState" in merged and "success" not in merged:

@@ -1425,7 +1425,7 @@ class BydClient:
         if control_params is not None:
             if (
                 isinstance(control_params, BatteryHeatParams)
-                and "10100001" in capabilities.function_nos
+                and ("10100001" in capabilities.function_nos or "10100002" in capabilities.function_nos)
                 and "10300002" not in capabilities.function_nos
             ):
                 params_dict = control_params.to_dedicated_control_params_map()

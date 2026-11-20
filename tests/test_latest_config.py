@@ -164,9 +164,10 @@ def test_supported_summary_pins_count() -> None:
     supported, total = caps.supported_summary()
     assert total == len(FEATURE_REGISTRY)
     # the test vehicle supports every registry feature except battery_heat,
-    # the four ATTO 3 EVO additions (nfc_key, uwb_key, mobile_ota, scheduled_departure)
-    # and rear seat ventilation (left and right).
-    assert supported == total - 7, f"the test vehicle fixture supported={supported}/{total} (expected total-7)"
+    # the four ATTO 3 EVO additions (nfc_key, uwb_key, mobile_ota, scheduled_departure),
+    # rear seat ventilation (left and right), tpms (1004), and three DTC sensors
+    # (10230006, 10230008, 10230009).
+    assert supported == total - 10, f"the test vehicle fixture supported={supported}/{total} (expected total-10)"
 
 
 def test_feature_report_returns_one_row_per_registry_entry() -> None:

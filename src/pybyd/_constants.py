@@ -1,7 +1,7 @@
 """Internal constants shared across the library."""
 
 USER_AGENT = "okhttp/4.12.0"
-SESSION_EXPIRED_CODES: frozenset[str] = frozenset({"1002", "1005", "1010"})
+SESSION_EXPIRED_CODES: frozenset[str] = frozenset({"1002", "1011", "3001", "3003"})
 
 # ------------------------------------------------------------------
 # BYD climate temperature scale  (°C → scale 1-17)

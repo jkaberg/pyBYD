@@ -31,8 +31,14 @@ class OnlineState(BydEnum):
     """Vehicle online/offline state."""
 
     UNKNOWN = -1
+    OFFLINE = 0
     ONLINE = 1
-    OFFLINE = 2
+
+    @classmethod
+    def _missing_(cls, value: object) -> OnlineState:
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+            return cls.ONLINE
+        return cls.UNKNOWN
 
 
 class ConnectState(BydEnum):
@@ -118,6 +124,7 @@ class PowerGear(BydEnum):
 
     UNKNOWN = -1
     OFF = 1
+    STARTING = 2
     ON = 3
 
 
@@ -549,6 +556,7 @@ class VehicleRealtimeData(BydBaseModel):
     left_rear_door: DoorOpenState | None = None
     right_rear_door: DoorOpenState | None = None
     trunk_lid: DoorOpenState | None = None
+    trunk_lid_lower: DoorOpenState | None = None
     sliding_door: DoorOpenState | None = None
     forehold: DoorOpenState | None = None
     """Front trunk / frunk."""
@@ -764,8 +772,8 @@ class VehicleRealtimeData(BydBaseModel):
     """OK/ready indicator. 0=off."""
 
     # --- Features (extended) ---
-    repair_mode_switch: str | None = None
-    """Repair/service mode. '0'=off."""
+    repair_mode_switch: int | str | None = None
+    """Repair/service mode. '0' or 0=off, '1' or 1=on."""
 
     # --- Misc ---
     vehicle_time_zone: str | None = None
@@ -978,7 +986,7 @@ class VehicleRealtimeData(BydBaseModel):
     @property
     def is_online(self) -> bool:
         """Whether the vehicle is reporting as online."""
-        return self.online_state == OnlineState.ONLINE
+        return self.online_state not in (OnlineState.UNKNOWN, OnlineState.OFFLINE)
 
     @property
     def effective_charging_state(self) -> ChargingState:
@@ -1049,6 +1057,7 @@ class VehicleRealtimeData(BydBaseModel):
             self.left_rear_door,
             self.right_rear_door,
             self.trunk_lid,
+            self.trunk_lid_lower,
             self.sliding_door,
             self.forehold,
         ]
@@ -1069,7 +1078,7 @@ class VehicleRealtimeData(BydBaseModel):
     @property
     def is_vehicle_on(self) -> bool:
         """Whether the vehicle is powered on."""
-        return self.power_gear == PowerGear.ON
+        return self.power_gear in (PowerGear.STARTING, PowerGear.ON)
 
     @property
     def is_battery_heating(self) -> bool | None:

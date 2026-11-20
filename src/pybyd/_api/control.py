@@ -68,6 +68,7 @@ def _build_control_inner(
     control_params: dict[str, Any] | None = None,
     command_pwd: str | None = None,
     request_serial: str | None = None,
+    include_command_pwd: bool = True,
 ) -> dict[str, Any]:
     """Build the inner payload for remote control endpoints.
 
@@ -80,7 +81,8 @@ def _build_control_inner(
         Optional control password (PIN) sent as ``commandPwd``.
     """
     inner: dict[str, Any] = build_inner_base(config, vin=vin, request_serial=request_serial)
-    inner["commandPwd"] = command_pwd or ""
+    if include_command_pwd:
+        inner["commandPwd"] = command_pwd or ""
     inner["commandType"] = command.value
     if control_params is not None:
         inner["controlParamsMap"] = json.dumps(
@@ -177,6 +179,7 @@ async def _fetch_control_endpoint(
         control_params=control_params,
         command_pwd=command_pwd,
         request_serial=request_serial,
+        include_command_pwd=not endpoint.startswith("/control/remoteControlBatteryHeat"),
     )
 
     # Build extra code map: for remote control endpoints, include service errors.
