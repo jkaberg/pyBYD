@@ -149,6 +149,12 @@ def test_page_that_is_not_an_xor_is_not_folded(
     assert fold_tables(_with_xor_entry(tables, name, rnd, page, entry, flip=1)) is None
 
 
+@pytest.mark.parametrize("name", ["round", "xor", "final", "inv_round", "inv_xor", "inv_first"])
+def test_truncated_table_is_not_folded(tables: BangcleTables, name: str) -> None:
+    table = getattr(tables, name)
+    assert fold_tables(tables._replace(**{name: table[: len(table) // 2]})) is None
+
+
 @pytest.mark.parametrize(
     ("name", "rnd", "flip"),
     [

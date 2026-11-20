@@ -88,7 +88,8 @@ def fold_tables(tables: BangcleTables) -> FoldedTables | None:
         decrypt = _fold(
             range(9, 0, -1), tables.inv_round, tables.inv_xor, tables.inv_first, tables.perm_decrypt, (0, 3, 2, 1)
         )
-    except _NotFoldable:
+    except (_NotFoldable, ValueError, IndexError):
+        # a malformed table file falls back to the reference cipher too
         return None
     return FoldedTables(
         tuple(_state_tables(layer) for layer in encrypt.rounds),
