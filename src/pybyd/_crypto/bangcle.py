@@ -14,6 +14,9 @@ from pybyd._crypto._bangcle_block import (
     decrypt_cbc,
     encrypt_cbc,
 )
+from pybyd._crypto._bangcle_folded import FoldedTables, fold_tables
+from pybyd._crypto._bangcle_folded import decrypt_cbc as decrypt_cbc_folded
+from pybyd._crypto._bangcle_folded import encrypt_cbc as encrypt_cbc_folded
 from pybyd._crypto._pkcs7 import add_pkcs7, strip_pkcs7
 from pybyd.exceptions import BangcleError, BangcleTableLoadError
 
@@ -104,6 +107,8 @@ class BangcleCodec:
     def __init__(self, tables_path: Path | None = None) -> None:
         self._tables_path = tables_path
         self._tables: BangcleTables | None = None
+        # The fast form of the tables, or None for a table file it cannot be derived from.
+        self._folded: FoldedTables | None = None
 
     def _load_tables(self) -> BangcleTables:
         if self._tables is not None:
@@ -126,9 +131,13 @@ class BangcleCodec:
                     "Reinstall/upgrade pybyd so wheel data files are included."
                 ) from exc
 
-        self._tables = _load_tables_from_bin(raw)
+        tables = _load_tables_from_bin(raw)
+        self._folded = fold_tables(tables)
+        if self._folded is None:
+            _logger.debug("Bangcle tables cannot be folded; using the slow cipher")
+        self._tables = tables
         _logger.debug("Bangcle tables loaded successfully")
-        return self._tables
+        return tables
 
     async def async_load_tables(self) -> None:
         """Pre-load tables in an executor so the event loop is not blocked."""
@@ -142,7 +151,10 @@ class BangcleCodec:
         tables = self._load_tables()
         plain_bytes = plaintext.encode("utf-8") if isinstance(plaintext, str) else plaintext
         padded = add_pkcs7(plain_bytes)
-        ciphertext = encrypt_cbc(tables, padded, _ZERO_IV)
+        if self._folded is not None:
+            ciphertext = encrypt_cbc_folded(self._folded, padded, _ZERO_IV)
+        else:
+            ciphertext = encrypt_cbc(tables, padded, _ZERO_IV)
         return "F" + base64.b64encode(ciphertext).decode("ascii")
 
     def decode_envelope(self, envelope: str) -> bytes:
@@ -159,5 +171,8 @@ class BangcleCodec:
         if len(ciphertext) % 16 != 0:
             raise BangcleError(f"Bangcle ciphertext length {len(ciphertext)} is not a multiple of 16")
 
-        plaintext = decrypt_cbc(tables, ciphertext, _ZERO_IV)
+        if self._folded is not None:
+            plaintext = decrypt_cbc_folded(self._folded, ciphertext, _ZERO_IV)
+        else:
+            plaintext = decrypt_cbc(tables, ciphertext, _ZERO_IV)
         return strip_pkcs7(plaintext)
