@@ -30,7 +30,14 @@ from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
 from pybyd._crypto.bangcle import BangcleCodec
 from pybyd._crypto.hashing import md5_hex
-from pybyd._mqtt import BydMqttRuntime, MqttEvent, MqttEventType, fetch_mqtt_bootstrap, flatten_vehicle_status_push
+from pybyd._mqtt import (
+    BydMqttRuntime,
+    MqttEvent,
+    MqttEventType,
+    VehicleStatusPushDto,
+    fetch_mqtt_bootstrap,
+    flatten_vehicle_status_push,
+)
 from pybyd._transport import SecureTransport
 from pybyd.config import BydConfig
 from pybyd.exceptions import (
@@ -659,17 +666,23 @@ class BydClient:
                     if car is not None:
                         car.handle_mqtt_realtime(realtime_parsed)
             else:
-                flat_push = flatten_vehicle_status_push(respond_data)
+                push_payload = respond_data
+                flat_push = flatten_vehicle_status_push(push_payload)
                 if not flat_push and isinstance(data, dict):
-                    flat_push = flatten_vehicle_status_push(data)
+                    push_payload = data
+                    flat_push = flatten_vehicle_status_push(push_payload)
                 if flat_push:
+                    # HVAC and charging only read their own DTO, so a door
+                    # push does not touch them or leak keys into their raw.
+                    air_push = flatten_vehicle_status_push(push_payload, (VehicleStatusPushDto.AIR_STATUS,))
+                    charge_push = flatten_vehicle_status_push(push_payload, (VehicleStatusPushDto.CHARGE_STATUS,))
                     try:
                         partial_rt = VehicleRealtimeData.model_validate(
                             flat_push,
                             context={"energy_type": energy_type},
                         )
-                        partial_hvac = HvacStatus.model_validate(flat_push)
-                        partial_charging = ChargingStatus.model_validate(flat_push)
+                        partial_hvac = HvacStatus.model_validate(air_push) if air_push else None
+                        partial_charging = ChargingStatus.model_validate(charge_push) if charge_push else None
                     except Exception:
                         _logger.debug("Failed to parse MQTT vehicleStatusPush", exc_info=True)
                     else:

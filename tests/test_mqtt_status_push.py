@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pybyd._mqtt import MqttEvent, flatten_vehicle_status_push
+from pybyd._mqtt import MqttEvent, VehicleStatusPushDto, flatten_vehicle_status_push
 from pybyd._state_engine import ProjectionSpec, VehicleStateEngine
 from pybyd.client import BydClient
 from pybyd.config import BydConfig
@@ -114,17 +114,18 @@ async def test_state_engine_patch_skips_uninitialized_base_and_patches_hvac_char
     )
     callbacks.clear()
 
-    flat = flatten_vehicle_status_push(
-        {
-            "airStatusDto": {"airRunState": 1, "cycleModel": 2, "mainSettingTempNew": 23.0},
-            "chargeStatusDto": {"chargingState": 15, "connectState": 0, "chargeState": 15},
-            "can4A505Dto": {"elecPercent": 85},
-        }
-    )
+    push = {
+        "airStatusDto": {"cycleModel": 2, "mainSettingTempNew": 23.0},
+        "chargeStatusDto": {"chargingState": 15, "connectState": 0, "chargeState": 15},
+        "can4A505Dto": {"elecPercent": 85},
+    }
+    flat = flatten_vehicle_status_push(push)
+    air = flatten_vehicle_status_push(push, (VehicleStatusPushDto.AIR_STATUS,))
+    charge = flatten_vehicle_status_push(push, (VehicleStatusPushDto.CHARGE_STATUS,))
     await engine.patch_status_push(
         realtime=VehicleRealtimeData.model_validate(flat),
-        hvac=HvacStatus.model_validate(flat),
-        charging=ChargingStatus.model_validate(flat),
+        hvac=HvacStatus.model_validate(air),
+        charging=ChargingStatus.model_validate(charge),
     )
 
     # Atomic single rebuild
@@ -134,11 +135,13 @@ async def test_state_engine_patch_skips_uninitialized_base_and_patches_hvac_char
     assert snap.realtime.elec_percent == 85
     assert snap.realtime.charge_power is None
     assert snap.hvac is not None
-    assert snap.hvac.status == HvacOverallStatus.ON
+    assert snap.hvac.status == HvacOverallStatus.OFF
+    assert "elecPercent" not in snap.hvac.raw
     assert snap.hvac.cycle_choice == AirCirculationMode.INTERNAL
     assert snap.hvac.main_setting_temp_new == 23.0
     assert snap.charging is not None
-    assert snap.charging.soc == 85
+    assert snap.charging.soc == 70
+    assert "cycleModel" not in snap.charging.raw
     assert snap.charging.connect_state == 0
     assert snap.charging.charge_power is None
 
@@ -163,7 +166,7 @@ async def test_client_on_mqtt_event_routes_vehicle_status_push_and_ack() -> None
                 "respondData": {
                     "doorStatusDto": {"leftFrontDoor": 1},
                     "can4A505Dto": {"elecPercent": 91},
-                    "airStatusDto": {"airRunState": 1, "cycleModel": 2},
+                    "airStatusDto": {"cycleModel": 2},
                 }
             },
         },
@@ -176,9 +179,9 @@ async def test_client_on_mqtt_event_routes_vehicle_status_push_and_ack() -> None
     pushed_charging = call.kwargs["charging"]
     assert pushed_rt.left_front_door == DoorOpenState.OPEN
     assert pushed_rt.elec_percent == 91
-    assert pushed_hvac.status == HvacOverallStatus.ON
     assert pushed_hvac.cycle_choice == AirCirculationMode.INTERNAL
-    assert pushed_charging.soc == 91
+    assert "leftFrontDoor" not in pushed_hvac.raw
+    assert pushed_charging is None
 
     ack_event = MqttEvent(
         event="remoteControlAck",
@@ -193,3 +196,27 @@ async def test_client_on_mqtt_event_routes_vehicle_status_push_and_ack() -> None
     client._on_mqtt_event(ack_event)
     assert acks == []
     await asyncio.sleep(0)
+
+
+def test_client_door_only_status_push_leaves_hvac_and_charging_alone() -> None:
+    client = BydClient(BydConfig(username="user@example.com", password="secret"))
+    car = MagicMock()
+    client._cars["VIN123"] = car
+
+    client._on_mqtt_event(
+        MqttEvent(
+            event="vehicleStatusPush",
+            vin="VIN123",
+            topic="oversea/res/1",
+            payload={
+                "event": "vehicleStatusPush",
+                "vin": "VIN123",
+                "data": {"respondData": {"time": 1700000000, "doorStatusDto": {"leftFrontDoor": 1}}},
+            },
+        )
+    )
+
+    call = car.handle_mqtt_status_push.call_args
+    assert call.args[0].left_front_door == DoorOpenState.OPEN
+    assert call.kwargs["hvac"] is None
+    assert call.kwargs["charging"] is None

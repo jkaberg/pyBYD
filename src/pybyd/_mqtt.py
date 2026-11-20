@@ -192,13 +192,18 @@ REALTIME_STATUS_PUSH_DTOS: tuple[VehicleStatusPushDto, ...] = tuple(
 )
 
 
-def flatten_vehicle_status_push(payload: dict[str, Any]) -> dict[str, Any]:
-    """Flatten nested ``vehicleStatusPush`` DTOs into a partial realtime dict.
+def flatten_vehicle_status_push(
+    payload: dict[str, Any],
+    dtos: tuple[VehicleStatusPushDto, ...] = REALTIME_STATUS_PUSH_DTOS,
+) -> dict[str, Any]:
+    """Flatten nested ``vehicleStatusPush`` DTOs into a partial dict.
 
-    Returns an empty dict if none of the known DTO objects are present.
+    Only the *dtos* sections are read, so a caller can build one model
+    from just the DTOs that feed it. Returns an empty dict if none of
+    them are present.
     """
     merged: dict[str, Any] = {}
-    for dto_key in REALTIME_STATUS_PUSH_DTOS:
+    for dto_key in dtos:
         dto = payload.get(dto_key.value)
         if isinstance(dto, dict):
             for field_key, field_val in dto.items():
