@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import enum
 import json
 import logging
 import time
@@ -136,6 +137,83 @@ def decode_mqtt_payload(payload: bytes | bytearray, decrypt_key_hex: str) -> tup
     if not isinstance(parsed, dict):
         raise BydError("MQTT payload decrypted to non-object JSON")
     return parsed, plain
+
+
+class MqttEventType(enum.StrEnum):
+    """MQTT ``event`` envelope names emitted by the BYD broker."""
+
+    FUNCTION_PROTOBUF = "FunctionProtoBuf"
+    REMOTE_CONTROL = "remoteControl"
+    REMOTE_CONTROL_ACK = "remoteControlAck"
+    VEHICLE_EMPOWER = "vehicleEmpower"
+    BLUETOOTH_INFO = "bluetoothInfo"
+    REMOTE_CAMERA_IMAGE = "remoteCameraImage"
+    GPS_INFO = "gpsInfo"
+    INFO_CHANGE = "infoChange"
+    VEHICLE_INFO = "vehicleInfo"
+    PILE_STATUS_CHANGE = "pile_status_change"
+    VEHICLE_STATUS_PUSH = "vehicleStatusPush"
+
+
+class VehicleStatusPushDto(enum.StrEnum):
+    """Nested domain section keys inside ``vehicleStatusPush`` payloads."""
+
+    AIR_STATUS = "airStatusDto"
+    CAN_21511 = "can21511Dto"
+    CAN_22D02 = "can22D02Dto"
+    CAN_26B = "can26BDto"
+    CAN_2C0 = "can2C0Dto"
+    CAN_33806 = "can33806Dto"
+    CAN_347 = "can347Dto"
+    CAN_3D903 = "can3D903Dto"
+    CAN_3D907 = "can3D907Dto"
+    CAN_429 = "can429Dto"
+    CAN_48C = "can48CDto"
+    CAN_4A502 = "can4A502Dto"
+    CAN_4A505 = "can4A505Dto"
+    CAN_4A507 = "can4A507Dto"
+    CAN_4EB06 = "can4EB06Dto"
+    CHARGE_STATUS = "chargeStatusDto"
+    COMMON = "commonDto"
+    DOOR_STATUS = "doorStatusDto"
+    DRIVING_STATUS = "drivingStatusDto"
+    SMART_CHARGE = "smartChargeDto"
+    SMART_JOURNEY = "smartJourneyDto"
+    TIRE_STATUS = "tireStatusDto"
+    WINDOW_STATUS = "windowStatusDto"
+
+
+#: Subset of ``VehicleStatusPushDto`` keys whose fields map onto
+#: :class:`~pybyd.models.realtime.VehicleRealtimeData`.
+REALTIME_STATUS_PUSH_DTOS: tuple[VehicleStatusPushDto, ...] = tuple(
+    dto
+    for dto in VehicleStatusPushDto
+    if dto not in (VehicleStatusPushDto.SMART_CHARGE, VehicleStatusPushDto.SMART_JOURNEY)
+)
+
+
+def flatten_vehicle_status_push(
+    payload: dict[str, Any],
+    dtos: tuple[VehicleStatusPushDto, ...] = REALTIME_STATUS_PUSH_DTOS,
+) -> dict[str, Any]:
+    """Flatten nested ``vehicleStatusPush`` DTOs into a partial dict.
+
+    Only the *dtos* sections are read, so a caller can build one model
+    from just the DTOs that feed it. Returns an empty dict if none of
+    them are present.
+    """
+    merged: dict[str, Any] = {}
+    for dto_key in dtos:
+        dto = payload.get(dto_key.value)
+        if isinstance(dto, dict):
+            for field_key, field_val in dto.items():
+                if field_val is not None:
+                    merged[field_key] = field_val
+    if merged:
+        for meta_key in ("time", "timestamp"):
+            if meta_key in payload and payload[meta_key] is not None and meta_key not in merged:
+                merged[meta_key] = payload[meta_key]
+    return merged
 
 
 class BydMqttRuntime:

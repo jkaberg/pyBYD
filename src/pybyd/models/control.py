@@ -61,6 +61,15 @@ class ControlState(enum.IntEnum):
     FAILURE = 2
 
 
+class RemoteControlRes(enum.IntEnum):
+    """Raw ``res`` values from BYD remote control polling and MQTT events."""
+
+    PENDING = 1
+    SUCCESS = 2
+    FAILURE = 3
+    SUCCESS_ALT = 4
+
+
 # ------------------------------------------------------------------
 # Command result
 # ------------------------------------------------------------------
@@ -83,13 +92,13 @@ class RemoteControlResult(BydBaseModel):
 
         # BYD ``res`` field (from /remoteControlResult and MQTT acks):
         #   1 = command received / in progress (keep polling)
-        #   2 = success (terminal)
+        #   2, 4 = success (terminal)
         #   other = failure (terminal)
         if "res" in merged and "controlState" not in merged and "control_state" not in merged:
             res_val = int(merged["res"])
-            if res_val == 1:
+            if res_val == RemoteControlRes.PENDING:
                 state = ControlState.PENDING
-            elif res_val == 2:
+            elif res_val in (RemoteControlRes.SUCCESS, RemoteControlRes.SUCCESS_ALT):
                 state = ControlState.SUCCESS
             else:
                 state = ControlState.FAILURE

@@ -78,6 +78,7 @@ class HvacStatus(BydBaseModel):
 
     _KEY_ALIASES: ClassVar[dict[str, str]] = {
         **COMMON_KEY_ALIASES,
+        "cycleModel": "cycleChoice",
     }
 
     _SENTINEL_RULES: ClassVar[dict[str, Callable[..., bool]]] = {
@@ -98,6 +99,8 @@ class HvacStatus(BydBaseModel):
     """Fan speed (1-7)."""
     cycle_choice: AirCirculationMode | None = None
     """Air circulation mode (external / internal)."""
+    air_run_state: int | None = None
+    """Raw ``airRunState``, left uninterpreted until confirmed live."""
 
     # --- Temperature ---
     main_setting_temp: float | None = None

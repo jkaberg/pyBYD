@@ -30,7 +30,14 @@ from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
 from pybyd._crypto.bangcle import BangcleCodec
 from pybyd._crypto.hashing import md5_hex
-from pybyd._mqtt import BydMqttRuntime, MqttEvent, fetch_mqtt_bootstrap
+from pybyd._mqtt import (
+    BydMqttRuntime,
+    MqttEvent,
+    MqttEventType,
+    VehicleStatusPushDto,
+    fetch_mqtt_bootstrap,
+    flatten_vehicle_status_push,
+)
 from pybyd._transport import SecureTransport
 from pybyd.config import BydConfig
 from pybyd.exceptions import (
@@ -631,34 +638,66 @@ class BydClient:
                 _logger.debug("on_mqtt_event callback failed", exc_info=True)
 
         # --- 2) vehicleInfo callback for on_vehicle_info + BydCar routing ---
-        if event.event == "vehicleInfo" and event.vin:
-            realtime_parsed: VehicleRealtimeData | None = None
+        if event.event in (MqttEventType.VEHICLE_INFO, MqttEventType.VEHICLE_STATUS_PUSH) and event.vin:
             cached_vehicle = self._vehicle_metadata_by_vin.get(event.vin)
             energy_type = (
                 cached_vehicle.energy_type
                 if cached_vehicle is not None and cached_vehicle.energy_type is not EnergyType.UNKNOWN
                 else EnergyType.EV
             )
-            try:
-                realtime_parsed = VehicleRealtimeData.model_validate(
-                    respond_data,
-                    context={"energy_type": energy_type},
-                )
-            except Exception:
-                _logger.debug("Failed to parse MQTT vehicleInfo", exc_info=True)
+            if event.event == MqttEventType.VEHICLE_INFO:
+                realtime_parsed: VehicleRealtimeData | None = None
+                try:
+                    realtime_parsed = VehicleRealtimeData.model_validate(
+                        respond_data,
+                        context={"energy_type": energy_type},
+                    )
+                except Exception:
+                    _logger.debug("Failed to parse MQTT vehicleInfo", exc_info=True)
 
-            if realtime_parsed is not None:
-                # Fire user callback
-                if self._on_vehicle_info is not None:
+                if realtime_parsed is not None:
+                    if self._on_vehicle_info is not None:
+                        try:
+                            self._on_vehicle_info(event.vin, realtime_parsed)
+                        except Exception:
+                            _logger.debug("on_vehicle_info callback failed", exc_info=True)
+
+                    car = self._cars.get(event.vin)
+                    if car is not None:
+                        car.handle_mqtt_realtime(realtime_parsed)
+            else:
+                push_payload = respond_data
+                flat_push = flatten_vehicle_status_push(push_payload)
+                if not flat_push and isinstance(data, dict):
+                    push_payload = data
+                    flat_push = flatten_vehicle_status_push(push_payload)
+                if flat_push:
+                    # HVAC and charging only read their own DTO, so a door
+                    # push does not touch them or leak keys into their raw.
+                    air_push = flatten_vehicle_status_push(push_payload, (VehicleStatusPushDto.AIR_STATUS,))
+                    charge_push = flatten_vehicle_status_push(push_payload, (VehicleStatusPushDto.CHARGE_STATUS,))
                     try:
-                        self._on_vehicle_info(event.vin, realtime_parsed)
+                        partial_rt = VehicleRealtimeData.model_validate(
+                            flat_push,
+                            context={"energy_type": energy_type},
+                        )
+                        partial_hvac = HvacStatus.model_validate(air_push) if air_push else None
+                        partial_charging = ChargingStatus.model_validate(charge_push) if charge_push else None
                     except Exception:
-                        _logger.debug("on_vehicle_info callback failed", exc_info=True)
-
-                # Route to BydCar instance (through guard window)
-                car = self._cars.get(event.vin)
-                if car is not None:
-                    car.handle_mqtt_realtime(realtime_parsed)
+                        _logger.debug("Failed to parse MQTT vehicleStatusPush", exc_info=True)
+                    else:
+                        car = self._cars.get(event.vin)
+                        if car is not None:
+                            car.handle_mqtt_status_push(
+                                partial_rt,
+                                hvac=partial_hvac,
+                                charging=partial_charging,
+                            )
+                else:
+                    _logger.debug(
+                        "MQTT vehicleStatusPush had no recognised DTOs (keys=%s)",
+                        sorted(respond_data.keys()),
+                    )
 
         # --- 2b) smartCharge callback — route to BydCar ---
         if event.event == "smartCharge" and event.vin:
@@ -720,7 +759,19 @@ class BydClient:
         # does NOT belong to an in-flight data poll (GPS, realtime).  This
         # lets the integration distinguish actual command acks from data-poll
         # MQTT responses that happen to arrive as "remoteControl" events.
-        if event.vin and event.event == "remoteControl" and (serial is None or serial not in self._data_poll_serials):
+        if event.vin and event.event == MqttEventType.REMOTE_CONTROL_ACK:
+            _logger.debug(
+                "MQTT remoteControlAck received serial=%s res=%s ackStatus=%s",
+                serial,
+                respond_data.get("res"),
+                respond_data.get("ackStatus"),
+            )
+
+        if (
+            event.vin
+            and event.event == MqttEventType.REMOTE_CONTROL
+            and (serial is None or serial not in self._data_poll_serials)
+        ):
             try:
                 raw_uuid: str | None = None
                 if isinstance(data, dict):

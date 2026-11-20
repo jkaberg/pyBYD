@@ -335,6 +335,33 @@ class BydCar:
         except Exception:
             _logger.debug("Failed to process MQTT realtime for vin=%s", self._vin, exc_info=True)
 
+    def handle_mqtt_status_push(
+        self,
+        data: VehicleRealtimeData,
+        *,
+        hvac: HvacStatus | None = None,
+        charging: ChargingStatus | None = None,
+    ) -> None:
+        """Handle a partial MQTT ``vehicleStatusPush`` update for this vehicle."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        loop.create_task(self._async_handle_mqtt_status_push(data, hvac=hvac, charging=charging))
+
+    async def _async_handle_mqtt_status_push(
+        self,
+        data: VehicleRealtimeData,
+        *,
+        hvac: HvacStatus | None = None,
+        charging: ChargingStatus | None = None,
+    ) -> None:
+        """Async handler for partial MQTT ``vehicleStatusPush`` updates."""
+        try:
+            await self._engine.patch_status_push(realtime=data, hvac=hvac, charging=charging)
+        except Exception:
+            _logger.debug("Failed to process MQTT vehicleStatusPush for vin=%s", self._vin, exc_info=True)
+
     def handle_mqtt_charging(self, data: ChargingStatus) -> None:
         """Handle an MQTT ``smartCharge`` push for this vehicle.
 
