@@ -503,8 +503,8 @@ class VehicleRealtimeData(BydBaseModel):
     """Driver-side set temperature on BYD scale (1-17)."""
     main_setting_temp_new: float | None = None
     """Driver-side set temperature (deg C, precise)."""
-    air_run_state: AirCirculationMode | None = None
-    """Air circulation mode."""
+    air_run_state: int | None = None
+    """Raw ``airRunState``, left uninterpreted until confirmed live."""
 
     # --- Seat heating/ventilation ---
     main_seat_heat_state: SeatHeatVentState | None = None

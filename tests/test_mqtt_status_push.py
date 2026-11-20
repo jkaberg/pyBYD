@@ -115,7 +115,7 @@ async def test_state_engine_patch_skips_uninitialized_base_and_patches_hvac_char
     callbacks.clear()
 
     push = {
-        "airStatusDto": {"cycleModel": 2, "mainSettingTempNew": 23.0},
+        "airStatusDto": {"cycleModel": 2, "airRunState": 1, "mainSettingTempNew": 23.0},
         "chargeStatusDto": {"chargingState": 15, "connectState": 0, "chargeState": 15},
         "can4A505Dto": {"elecPercent": 85},
     }
@@ -138,6 +138,7 @@ async def test_state_engine_patch_skips_uninitialized_base_and_patches_hvac_char
     assert snap.hvac.status == HvacOverallStatus.OFF
     assert "elecPercent" not in snap.hvac.raw
     assert snap.hvac.cycle_choice == AirCirculationMode.INTERNAL
+    assert snap.hvac.air_run_state == 1
     assert snap.hvac.main_setting_temp_new == 23.0
     assert snap.charging is not None
     assert snap.charging.soc == 70
