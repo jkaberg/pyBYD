@@ -115,9 +115,10 @@ class Vehicle(BydBaseModel):
     def has_permission(self, code: str) -> bool:
         """Return whether this account holds guest permission *code*.
 
-        Owner accounts (``not is_shared``) are unrestricted and always return ``True``.
+        Owner accounts (``not is_shared``) and shared records without a populated
+        ``rangeDetailList`` fail open and return ``True``.
         """
-        if not self.is_shared:
+        if not self.is_shared or not self.range_detail_list:
             return True
         return code in self.granted_permission_codes
 

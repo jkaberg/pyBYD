@@ -47,11 +47,16 @@ def _caps_all() -> VehicleCapabilities:
 
 def test_vehicle_has_permission_owner_vs_guest() -> None:
     owner = Vehicle.model_validate({"vin": "TESTVIN", "empowerType": 2})
+    guest_empty = Vehicle.model_validate({"vin": "TESTVIN", "empowerType": -1})
     guest = Vehicle.model_validate({"vin": "TESTVIN", "empowerType": -1, "rangeDetailList": _RANGE_TREE})
 
     assert owner.is_shared is False
     assert owner.has_permission("43") is True
     assert owner.has_permission("31") is True
+
+    assert guest_empty.is_shared is True
+    assert guest_empty.has_permission("21") is True
+    assert guest_empty.has_permission("31") is True
 
     assert guest.is_shared is True
     assert guest.granted_permission_codes == frozenset({"2", "21", "4", "41"})

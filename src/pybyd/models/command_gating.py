@@ -295,7 +295,7 @@ def _filter_guest_function_nos(
     guest_permissions: frozenset[str] | None,
 ) -> set[str]:
     """Apply level-3/4 guest functionNo allow-list when present in ``guest_permissions``."""
-    if not is_shared or guest_permissions is None:
+    if not is_shared or not guest_permissions:
         return function_nos
     level34 = {code for code in guest_permissions if len(code) >= 4 and code.isdigit()}
     if not level34:
@@ -311,7 +311,7 @@ def _guest_permission_ok(
     guest_permissions: frozenset[str] | None,
 ) -> bool:
     """Check level-2 guest permission code for *command* when the account is shared."""
-    if not is_shared or guest_permissions is None:
+    if not is_shared or not guest_permissions:
         return True
     required = _COMMAND_GUEST_PERMISSION.get(command)
     if required is None:

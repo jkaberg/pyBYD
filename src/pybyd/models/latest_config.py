@@ -337,7 +337,7 @@ class VehicleCapabilities(BydBaseModel):
         granted_codes: frozenset[str] | None,
     ) -> VehicleCapabilities:
         """Return a copy with capabilities masked by a shared guest's granted permission codes."""
-        if not is_shared or granted_codes is None:
+        if not is_shared or not granted_codes:
             return self
 
         updates: dict[str, bool] = {}
