@@ -188,6 +188,19 @@ _SEAT_STATUS_TO_COMMAND: dict[int, int] = {
 }
 
 
+class AirRunState(BydEnum):
+    """Whether the A/C is running (``airRunState``).
+
+    Follows the A/C itself, not the circulation mode: it stayed ``OFF``
+    while ``cycleChoice`` switched and went ``ON`` only during a climate
+    run, in step with ``hvac.status`` (#20).
+    """
+
+    UNKNOWN = -1
+    ON = 1
+    OFF = 2
+
+
 class AirCirculationMode(BydEnum):
     """Air circulation mode."""
 
@@ -510,8 +523,8 @@ class VehicleRealtimeData(BydBaseModel):
     """Driver-side set temperature on BYD scale (1-17)."""
     main_setting_temp_new: float | None = None
     """Driver-side set temperature (deg C, precise)."""
-    air_run_state: int | None = None
-    """Raw ``airRunState``, left uninterpreted until confirmed live."""
+    air_run_state: AirRunState | None = None
+    """Whether the A/C is running."""
 
     # --- Seat heating/ventilation ---
     main_seat_heat_state: SeatHeatVentState | None = None
@@ -1079,6 +1092,13 @@ class VehicleRealtimeData(BydBaseModel):
     def is_vehicle_on(self) -> bool:
         """Whether the vehicle is powered on."""
         return self.power_gear in (PowerGear.STARTING, PowerGear.ON)
+
+    @property
+    def is_ac_running(self) -> bool | None:
+        """Whether the A/C is running, ``None`` when not reported."""
+        if self.air_run_state in (None, AirRunState.UNKNOWN):
+            return None
+        return self.air_run_state == AirRunState.ON
 
     @property
     def is_battery_heating(self) -> bool | None:
