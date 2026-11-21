@@ -102,7 +102,7 @@ class _MqttWaiter:
     """
 
     vin: str
-    future: asyncio.Future[dict[str, Any]]
+    future: asyncio.Future[dict[str, Any] | None]
     event_type: str | None = None
     serial: str | None = None
     created_at: float = field(default_factory=time.monotonic)
@@ -483,10 +483,13 @@ class BydClient:
         self._mqtt_runtime = None
         if runtime is not None:
             runtime.stop()
-        # Cancel any pending MQTT waiters so callers don't hang
+        # End pending MQTT waits as if they timed out, so callers don't hang
+        # and fall back to HTTP polling. Cancelling the futures instead would
+        # raise CancelledError out of a read in progress whenever MQTT
+        # restarts under it (a decrypt-failure re-login, for one).
         for w in self._mqtt_waiters:
             if not w.future.done():
-                w.future.cancel()
+                w.future.set_result(None)
         self._mqtt_waiters.clear()
 
     _MQTT_REAUTH_COOLDOWN_S: float = 60.0
@@ -893,7 +896,7 @@ class BydClient:
         if runtime is None or not runtime.is_running or effective_timeout <= 0:
             return None
         loop = self._loop or asyncio.get_running_loop()
-        fut: asyncio.Future[dict[str, Any]] = loop.create_future()
+        fut: asyncio.Future[dict[str, Any] | None] = loop.create_future()
         waiter = _MqttWaiter(vin=vin, event_type=event_type, serial=serial, future=fut)
         self._mqtt_waiters.append(waiter)
         try:
