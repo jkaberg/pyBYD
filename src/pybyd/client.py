@@ -1922,14 +1922,19 @@ class BydClient:
         (eg the ``OPENAIR`` ``controlParamsMap``) to change what the plan
         does.  Saving with ``default_plan=1`` makes it the default, the
         cloud clears the flag on the others.
+
+        A once run less than 20 min ahead raises
+        :class:`BydStandbyScheduleError`; a daily or weekly one is saved
+        but skips today, which only the returned list's ``message`` says.
         """
-        await self._authed_call(
+        saved = await self._authed_call(
             _standby_api.save_standby_plan,
             vin,
             plan,
             schedule if schedule is not None else plan.schedule,
         )
-        return await self.get_standby_plans(vin)
+        plans = await self.get_standby_plans(vin)
+        return plans.model_copy(update={"message": saved.get("message") or None})
 
     async def create_standby_plan(
         self,

@@ -18,6 +18,7 @@ from pybyd.exceptions import (
     BydRemoteControlError,
     BydServiceBusyError,
     BydSessionExpiredError,
+    BydStandbyScheduleError,
     BydTransportError,
 )
 from pybyd.models import (
@@ -68,6 +69,7 @@ __all__ = [
     "BydRateLimitError",
     "BydRemoteControlError",
     "BydServiceBusyError",
+    "BydStandbyScheduleError",
     "BydSessionExpiredError",
     "BydTransportError",
     "CommandAckEvent",

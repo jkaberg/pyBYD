@@ -14,7 +14,7 @@ from pybyd._api import standby as standby_api
 from pybyd._api.standby import build_save_inner, is_send_ready, schedule_fields
 from pybyd.client import BydClient
 from pybyd.config import BydConfig
-from pybyd.exceptions import BydError, BydRemoteControlError
+from pybyd.exceptions import BydError, BydRemoteControlError, BydStandbyScheduleError
 from pybyd.models.standby import (
     PlanClimate,
     PlanSeats,
@@ -226,11 +226,33 @@ async def _passthrough(fn):  # type: ignore[no-untyped-def]
 async def test_save_keeps_schedule_and_refetches() -> None:
     client = _client()
     plan = StandbyPlanList.model_validate({"data": [_PLAN]}).plans[0]
-    with patch.object(client, "_authed_call", AsyncMock()) as authed:
+    fresh = StandbyPlanList.model_validate({"data": [_PLAN]})
+    with patch.object(client, "_authed_call", AsyncMock(side_effect=[{"message": "saved"}, fresh])) as authed:
         await client.save_standby_plan("VIN", plan)
     save_call, list_call = authed.await_args_list
     assert save_call.args[3] == StandbySchedule.weekly("13:30", [4, 5, 6])
     assert list_call.args == (standby_api.fetch_standby_plans, "VIN")
+
+
+async def test_save_returns_skip_today_warning() -> None:
+    # daily inside 20 min: code 0, saved, but today is skipped (#91)
+    client = _client()
+    plan = StandbyPlanList.model_validate({"data": [_PLAN]}).plans[0]
+    warning = "Conducción confort plan saved. The scheduled time is within 20 min, and will not be executed today"
+    fresh = StandbyPlanList.model_validate({"data": [_PLAN]})
+    with patch.object(client, "_authed_call", AsyncMock(side_effect=[{"message": warning}, fresh])):
+        plans = await client.save_standby_plan("VIN", plan)
+    assert plans.message == warning
+    assert StandbyPlanList.model_validate({"data": [_PLAN]}).message is None
+
+
+async def test_save_maps_6111_to_schedule_error() -> None:
+    # once inside 20 min: "at least 20 min from now and within the next 30 days" (#91)
+    plan = StandbyPlanList.model_validate({"data": [_PLAN]}).plans[0]
+    with patch.object(standby_api, "post_token_json", AsyncMock(return_value={})) as post:
+        await standby_api.save_standby_plan(_CONFIG, None, None, "VIN", plan, StandbySchedule.off())  # type: ignore[arg-type]
+    code_map = post.await_args.kwargs["extra_code_map"]
+    assert any("6111" in codes and exc is BydStandbyScheduleError for codes, exc in code_map.items())
 
 
 async def test_create_returns_new_plan() -> None:

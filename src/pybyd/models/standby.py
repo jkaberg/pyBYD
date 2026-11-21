@@ -231,6 +231,9 @@ class StandbyPlan(BydBaseModel):
     execute_time: BydTimestamp = None
     """Next run, ``None`` when not scheduled."""
     rec_execute_time: BydTimestamp = None
+    """The slot that ran last or is running now.  ``execute_time`` has
+    moved on to the next run by then: ``None`` for a once plan, a day
+    later for a daily one (#91)."""
     time_zone: str | None = None
     commands: list[StandbyPlanCommand] = Field(default_factory=list)
 
@@ -346,6 +349,12 @@ class StandbyPlanList(BydBaseModel):
 
     vin: str = ""
     plans: list[StandbyPlan] = Field(default_factory=list)
+    message: str | None = None
+    """The cloud's reply to the save that returned this list, if any.
+
+    Worth showing: a daily or weekly run less than 20 min ahead is saved
+    but skips today, and this is the only place that says so (#91).
+    """
 
 
 class StandbyPlanRunResult(BydBaseModel):

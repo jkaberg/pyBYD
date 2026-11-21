@@ -22,6 +22,7 @@ from typing import Any
 from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_token_json
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
+from pybyd.exceptions import BydStandbyScheduleError
 from pybyd.models.standby import (
     COMMAND_CLIMATE,
     EXECUTE_DAILY,
@@ -40,6 +41,9 @@ SET_DEFAULT_ENDPOINT = "/control/standby-vehicles/setDefault"
 DELETE_ENDPOINT = "/control/standby-vehicles/delete"
 SEND_ENDPOINT = "/control/standby-vehicles/send"
 SEND_RESULT_ENDPOINT = "/control/standby-vehicles/send-result"
+
+SCHEDULE_REFUSED_CODES: frozenset[str] = frozenset({"6111"})
+"""Once-plan time under 20 min ahead or over 30 days out (#91)."""
 
 
 async def fetch_standby_plans(
@@ -153,7 +157,8 @@ async def save_standby_plan(
     plan: StandbyPlan,
     schedule: StandbySchedule,
 ) -> dict[str, Any]:
-    """POST ``save``.  The response only carries a ``message``."""
+    """POST ``save``.  The response only carries a ``message``, which can
+    warn that a run less than 20 min ahead skips today."""
     decoded = await post_token_json(
         endpoint=SAVE_ENDPOINT,
         config=config,
@@ -162,6 +167,7 @@ async def save_standby_plan(
         inner=build_save_inner(config, vin, plan, schedule),
         vin=vin,
         not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
+        extra_code_map={SCHEDULE_REFUSED_CODES: BydStandbyScheduleError},
     )
     return decoded if isinstance(decoded, dict) else {}
 
