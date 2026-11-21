@@ -40,7 +40,7 @@ class ChargingStatus(BydBaseModel):
 
     @property
     def is_connected(self) -> bool:
-        return self.connect_state is not None and self.connect_state != 0
+        return self.connect_state is not None and self.connect_state > 0
 
     @property
     def is_charging(self) -> bool:

@@ -39,7 +39,7 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     FeatureSpec("unlock", "Unlock doors", ("1006",), "command"),
     FeatureSpec("climate", "Climate (HVAC)", ("1001", "10300001", "1015"), "command"),
     FeatureSpec("car_on", "Car on / one-tap prep", ("1001", "10300001", "1015"), "command"),
-    FeatureSpec("battery_heat", "Battery heating", ("10300002", "10100001"), "command"),
+    FeatureSpec("battery_heat", "Battery heating", ("10300002", "10100001", "10100002"), "command"),
     FeatureSpec("steering_wheel_heat", "Steering-wheel heat", ("10030010", "10300004"), "command"),
     FeatureSpec("driver_seat_heat", "Driver seat heat", ("10030002", "10300003"), "command"),
     FeatureSpec("driver_seat_ventilation", "Driver seat ventilation", ("10030001", "10300003"), "command"),
@@ -68,13 +68,18 @@ FEATURE_REGISTRY: tuple[FeatureSpec, ...] = (
     FeatureSpec("mobile_ota", "Mobile OTA", ("1016",), "metadata"),
     FeatureSpec("scheduled_departure", "Scheduled departure", ("1029",), "metadata"),
     FeatureSpec("energy_analysis", "Energy analysis", ("1022",), "sensor"),
+    FeatureSpec("tpms", "Tire pressure monitoring (TPMS)", ("1004",), "sensor"),
+    FeatureSpec("direct_tpms", "Direct tire pressure", ("10040001",), "sensor"),
     FeatureSpec("vehicle_health", "Vehicle health summary", ("1023",), "sensor"),
     FeatureSpec("health_tpms", "Health: tire pressure system", ("10230001",), "sensor"),
     FeatureSpec("health_steering", "Health: steering system", ("10230002",), "sensor"),
     FeatureSpec("health_srs", "Health: SRS (airbag)", ("10230003",), "sensor"),
     FeatureSpec("health_powertrain", "Health: powertrain", ("10230004",), "sensor"),
     FeatureSpec("health_battery", "Health: power battery", ("10230005",), "sensor"),
+    FeatureSpec("health_oil_pressure", "Health: oil pressure system", ("10230006",), "sensor"),
     FeatureSpec("health_esp", "Health: ESP", ("10230007",), "sensor"),
+    FeatureSpec("health_engine", "Health: engine status", ("10230008",), "sensor"),
+    FeatureSpec("health_coolant", "Health: engine coolant temperature", ("10230009",), "sensor"),
     FeatureSpec("health_charging", "Health: charging system", ("10230010",), "sensor"),
     FeatureSpec("health_braking", "Health: parking brake", ("10230011",), "sensor"),
     FeatureSpec("health_abs", "Health: ABS", ("10230012",), "sensor"),
@@ -104,9 +109,7 @@ def registered_latest_config_function_nos() -> frozenset[str]:
         | {
             "1002",  # door/window (parent)
             "1003",  # ventilation/heating (parent)
-            "1004",  # tire pressure (parent)
             "1010",  # battery heating (parent)
-            "10100001",  # driving battery preheating
             "1014",  # location
             # 1030 = "one-tap prep" (一键备车): the scheduled departure /
             # pre-conditioning flow (BOOKINGAIR under the hood); no separate
@@ -137,7 +140,6 @@ def registered_latest_config_function_nos() -> frozenset[str]:
             "10020005",  # windows
             "10030011",  # seat rows
             "10030013",  # three-speed seats
-            "10040001",  # direct tire pressure
         }
     )
 
@@ -237,13 +239,18 @@ class VehicleCapabilities(BydBaseModel):
     mobile_ota: bool | None = None
     scheduled_departure: bool | None = None
     energy_analysis: bool | None = None
+    tpms: bool | None = None
+    direct_tpms: bool | None = None
     vehicle_health: bool | None = None
     health_tpms: bool | None = None
     health_steering: bool | None = None
     health_srs: bool | None = None
     health_powertrain: bool | None = None
     health_battery: bool | None = None
+    health_oil_pressure: bool | None = None
     health_esp: bool | None = None
+    health_engine: bool | None = None
+    health_coolant: bool | None = None
     health_charging: bool | None = None
     health_braking: bool | None = None
     health_abs: bool | None = None
