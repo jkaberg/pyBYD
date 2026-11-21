@@ -253,19 +253,92 @@ def known_command_function_nos() -> frozenset[str]:
     )
 
 
+GUEST_PERMISSION_BASIC_CONTROL = "21"
+GUEST_PERMISSION_GPS = "31"
+GUEST_PERMISSION_CHARGING = "41"
+GUEST_PERMISSION_BATTERY_HEAT = "43"
+
+_COMMAND_GUEST_PERMISSION: dict[RemoteCommand, str] = {
+    RemoteCommand.START_CLIMATE: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.STOP_CLIMATE: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.SCHEDULE_CLIMATE: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.SEAT_CLIMATE: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.LOCK: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.UNLOCK: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.OPEN_TRUNK: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.CLOSE_TRUNK: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.OPEN_WINDOWS: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.CLOSE_WINDOWS: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.FIND_CAR: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.FLASH_LIGHTS: GUEST_PERMISSION_BASIC_CONTROL,
+    RemoteCommand.BATTERY_HEAT: GUEST_PERMISSION_BATTERY_HEAT,
+    RemoteCommand.START_CHARGE: GUEST_PERMISSION_CHARGING,
+    RemoteCommand.STOP_CHARGE: GUEST_PERMISSION_CHARGING,
+}
+
+_GUEST_ALWAYS_ALLOWED_FUNCTION_NOS: frozenset[str] = frozenset(
+    {
+        "1004",
+        "10020001",
+        "10020002",
+        "10020003",
+        "10020005",
+        "10020006",
+    }
+)
+
+
+def _filter_guest_function_nos(
+    function_nos: set[str],
+    *,
+    is_shared: bool,
+    guest_permissions: frozenset[str] | None,
+) -> set[str]:
+    """Apply level-3/4 guest functionNo allow-list when present in ``guest_permissions``."""
+    if not is_shared or not guest_permissions:
+        return function_nos
+    level34 = {code for code in guest_permissions if len(code) >= 4 and code.isdigit()}
+    if not level34:
+        return function_nos
+    allowed = level34 | _GUEST_ALWAYS_ALLOWED_FUNCTION_NOS
+    return function_nos & allowed
+
+
+def _guest_permission_ok(
+    command: RemoteCommand,
+    *,
+    is_shared: bool,
+    guest_permissions: frozenset[str] | None,
+) -> bool:
+    """Check level-2 guest permission code for *command* when the account is shared."""
+    if not is_shared or not guest_permissions:
+        return True
+    required = _COMMAND_GUEST_PERMISSION.get(command)
+    if required is None:
+        return True
+    return required in guest_permissions
+
+
 def _evaluate_rule(
     rule: CommandGateRule,
     capabilities: VehicleCapabilities,
     *,
     function_nos: set[str],
     learn_info: Mapping[str, int] | None = None,
+    is_shared: bool = False,
+    guest_permissions: frozenset[str] | None = None,
 ) -> CommandGateVerdict:
-    matched_function_nos = sorted([fn for fn in rule.required_function_nos if fn in function_nos])
+    effective_fns = _filter_guest_function_nos(
+        function_nos,
+        is_shared=is_shared,
+        guest_permissions=guest_permissions,
+    )
+    matched_function_nos = sorted([fn for fn in rule.required_function_nos if fn in effective_fns])
     counterpart_function_nos = sorted(
         function_no for function_no in rule.required_function_nos if function_no not in matched_function_nos
     )
 
-    fn_supported = _require(function_nos, rule.required_function_nos)
+    fn_supported = _require(effective_fns, rule.required_function_nos)
 
     # Fine gate: only enforced when the rule declares it AND the caller
     # actually provided a ``learn_info`` mapping.  Rules without
@@ -273,9 +346,16 @@ def _evaluate_rule(
     # contract, so this stays additive.
     matched_learn_info_keys = _learn_info_match(learn_info, rule.required_learn_info_keys)
     learn_info_supported = not rule.required_learn_info_keys or learn_info is None or bool(matched_learn_info_keys)
+    guest_supported = _guest_permission_ok(
+        rule.command,
+        is_shared=is_shared,
+        guest_permissions=guest_permissions,
+    )
 
-    supported = fn_supported and learn_info_supported
-    if not fn_supported:
+    supported = fn_supported and learn_info_supported and guest_supported
+    if not guest_supported:
+        reason = "guest_permission_denied"
+    elif not fn_supported:
         reason = "function_no_missing"
     elif not learn_info_supported:
         reason = "learn_info_missing"
@@ -301,11 +381,20 @@ def evaluate_all_command_gates(
     capabilities: VehicleCapabilities,
     *,
     learn_info: Mapping[str, int] | None = None,
+    is_shared: bool = False,
+    guest_permissions: frozenset[str] | None = None,
 ) -> list[CommandGateVerdict]:
     """Evaluate all canonical gates for reporting and diagnostics."""
     function_nos = set(capabilities.function_nos)
     return [
-        _evaluate_rule(rule, capabilities, function_nos=function_nos, learn_info=learn_info)
+        _evaluate_rule(
+            rule,
+            capabilities,
+            function_nos=function_nos,
+            learn_info=learn_info,
+            is_shared=is_shared,
+            guest_permissions=guest_permissions,
+        )
         for rule in _COMMAND_GATE_RULES
     ]
 
@@ -316,6 +405,8 @@ def evaluate_command_gate(
     *,
     control_params: Mapping[str, object] | None = None,
     learn_info: Mapping[str, int] | None = None,
+    is_shared: bool = False,
+    guest_permissions: frozenset[str] | None = None,
 ) -> CommandGateVerdict:
     """Evaluate preflight support for a command against capabilities/functionNos.
 
@@ -355,7 +446,21 @@ def evaluate_command_gate(
             )
 
         selected_rule = next(rule for rule in command_rules if rule.gate_id == gate_id)
-        return _evaluate_rule(selected_rule, capabilities, function_nos=function_nos, learn_info=learn_info)
+        return _evaluate_rule(
+            selected_rule,
+            capabilities,
+            function_nos=function_nos,
+            learn_info=learn_info,
+            is_shared=is_shared,
+            guest_permissions=guest_permissions,
+        )
 
     selected = command_rules[0]
-    return _evaluate_rule(selected, capabilities, function_nos=function_nos, learn_info=learn_info)
+    return _evaluate_rule(
+        selected,
+        capabilities,
+        function_nos=function_nos,
+        learn_info=learn_info,
+        is_shared=is_shared,
+        guest_permissions=guest_permissions,
+    )

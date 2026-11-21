@@ -56,7 +56,7 @@ from pybyd.exceptions import (
 from pybyd.models._base import BydBaseModel
 from pybyd.models.booking import BookingList
 from pybyd.models.charging import ChargingStatus
-from pybyd.models.command_gating import evaluate_command_gate
+from pybyd.models.command_gating import GUEST_PERMISSION_GPS, evaluate_command_gate
 from pybyd.models.control import (
     BatteryHeatParams,
     ChargeChangeResult,
@@ -91,7 +91,7 @@ from pybyd.models.standby import (
     StandbyPlanRunResult,
     StandbySchedule,
 )
-from pybyd.models.vehicle import EnergyType, Vehicle
+from pybyd.models.vehicle import EmpowerDetail, EnergyType, Vehicle
 from pybyd.session import Session
 
 if TYPE_CHECKING:
@@ -1143,6 +1143,31 @@ class BydClient:
             return None
         return dict(cached.vehicle_fun_learn_info) or None
 
+    def _guest_permissions_for(self, vin: str) -> tuple[bool, frozenset[str] | None]:
+        """Return ``(is_shared, granted_permission_codes)`` from cached vehicle metadata."""
+        cached = self._vehicle_metadata_by_vin.get(vin)
+        if cached is None or not cached.is_shared:
+            return False, None
+        return True, cached.granted_permission_codes
+
+    async def get_empower_detail(self, vin: str, *, empower_id: int | None = None) -> EmpowerDetail:
+        """Fetch granular guest authorization details for a shared vehicle."""
+        resolved_id = empower_id
+        if resolved_id is None:
+            cached = self._vehicle_metadata_by_vin.get(vin)
+            if cached is None:
+                await self.get_vehicles()
+                cached = self._vehicle_metadata_by_vin.get(vin)
+            if cached is not None:
+                resolved_id = cached.empower_id
+        if resolved_id is None:
+            raise BydEndpointNotSupportedError(
+                f"get_empower_detail requires empower_id (VIN {vin} is not a shared guest grant)",
+                code="not_shared_vehicle",
+                endpoint="/vehicle/empower/query/empowerDetailByVin",
+            )
+        return await self._authed_call(_vehicle_api.fetch_empower_detail_by_vin, vin, empower_id=resolved_id)
+
     async def get_car(
         self,
         vin: str,
@@ -1300,6 +1325,13 @@ class BydClient:
         the ``requestSerial``.  Falls back to HTTP polling of
         ``getGpsInfoResult`` if MQTT doesn't deliver in time.
         """
+        cached = self._vehicle_metadata_by_vin.get(vin)
+        if cached is not None and cached.is_shared and not cached.has_permission(GUEST_PERMISSION_GPS):
+            raise BydEndpointNotSupportedError(
+                f"get_gps_info blocked for shared VIN {vin}: guest permission {GUEST_PERMISSION_GPS!r} not granted",
+                code="guest_permission_denied",
+                endpoint="/control/getGpsInfo",
+            )
 
         async def _call() -> GpsInfo:
             return await self._trigger_and_poll(
@@ -1490,7 +1522,15 @@ class BydClient:
                 params_dict = dict(control_params)
 
         learn_info = await self._vehicle_fun_learn_info_for(vin)
-        gate = evaluate_command_gate(command, capabilities, control_params=params_dict, learn_info=learn_info)
+        is_shared, guest_perms = self._guest_permissions_for(vin)
+        gate = evaluate_command_gate(
+            command,
+            capabilities,
+            control_params=params_dict,
+            learn_info=learn_info,
+            is_shared=is_shared,
+            guest_permissions=guest_perms,
+        )
         if not gate.supported:
             raise BydEndpointNotSupportedError(
                 (f"Remote command {command.value} blocked for VIN {vin}: gate={gate.gate_id} reason={gate.reason}"),
@@ -1730,7 +1770,14 @@ class BydClient:
         """
         capabilities = await self.get_vehicle_capabilities(vin)
         learn_info = await self._vehicle_fun_learn_info_for(vin)
-        gate = evaluate_command_gate(RemoteCommand.START_CHARGE, capabilities, learn_info=learn_info)
+        is_shared, guest_perms = self._guest_permissions_for(vin)
+        gate = evaluate_command_gate(
+            RemoteCommand.START_CHARGE,
+            capabilities,
+            learn_info=learn_info,
+            is_shared=is_shared,
+            guest_permissions=guest_perms,
+        )
         if not gate.supported:
             raise BydEndpointNotSupportedError(
                 (f"save_charging_schedule blocked for VIN {vin}: gate={gate.gate_id} reason={gate.reason}"),
@@ -1805,7 +1852,14 @@ class BydClient:
         """
         capabilities = await self.get_vehicle_capabilities(vin)
         learn_info = await self._vehicle_fun_learn_info_for(vin)
-        gate = evaluate_command_gate(RemoteCommand.START_CHARGE, capabilities, learn_info=learn_info)
+        is_shared, guest_perms = self._guest_permissions_for(vin)
+        gate = evaluate_command_gate(
+            RemoteCommand.START_CHARGE,
+            capabilities,
+            learn_info=learn_info,
+            is_shared=is_shared,
+            guest_permissions=guest_perms,
+        )
         if not gate.supported:
             raise BydEndpointNotSupportedError(
                 (f"start_charging blocked for VIN {vin}: gate={gate.gate_id} reason={gate.reason}"),

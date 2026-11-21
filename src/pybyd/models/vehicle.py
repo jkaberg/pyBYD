@@ -38,6 +38,38 @@ class EmpowerRange(BydBaseModel):
     children: list[EmpowerRange] = Field(default_factory=list)
 
 
+def collect_permission_codes(ranges: list[EmpowerRange]) -> frozenset[str]:
+    """Recursively collect all permission ``code`` values from an ``EmpowerRange`` tree."""
+    codes: set[str] = set()
+    stack = list(ranges)
+    while stack:
+        item = stack.pop()
+        if item.code:
+            codes.add(str(item.code))
+        if item.children:
+            stack.extend(item.children)
+    return frozenset(codes)
+
+
+class EmpowerDetail(BydBaseModel):
+    """Detailed guest authorization record returned by ``empowerDetailByVin``."""
+
+    vin: str = ""
+    empower_id: int | None = None
+    empower_status: int | None = None
+    empower_control_pwd_status: bool = False
+    owner_email: str = ""
+    email: str = ""
+    auth_period: int | None = None
+    expire_date: BydTimestamp = None
+    detail_list: list[EmpowerRange] = Field(default_factory=list)
+
+    @property
+    def granted_codes(self) -> frozenset[str]:
+        """All permission codes granted in :attr:`detail_list`."""
+        return collect_permission_codes(self.detail_list)
+
+
 class Vehicle(BydBaseModel):
     """A vehicle associated with the user's account."""
 
@@ -74,6 +106,21 @@ class Vehicle(BydBaseModel):
     @property
     def is_shared(self) -> bool:
         return self.empower_type is not None and self.empower_type < 0
+
+    @property
+    def granted_permission_codes(self) -> frozenset[str]:
+        """All permission codes granted to a shared guest via ``rangeDetailList``."""
+        return collect_permission_codes(self.range_detail_list)
+
+    def has_permission(self, code: str) -> bool:
+        """Return whether this account holds guest permission *code*.
+
+        Owner accounts (``not is_shared``) and shared records without a populated
+        ``rangeDetailList`` fail open and return ``True``.
+        """
+        if not self.is_shared or not self.range_detail_list:
+            return True
+        return code in self.granted_permission_codes
 
     @property
     def ota_upgrade_supported(self) -> bool:
