@@ -33,6 +33,7 @@ from pybyd.models.ota import OtaStatus, OtaUpgradeInfo, OtaUpgradeResult
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import (
     AirCirculationMode,
+    AirRunState,
     ChargingState,
     ConnectState,
     DoorOpenState,
@@ -62,6 +63,7 @@ from pybyd.models.vehicle import EmpowerRange, EnergyType, Vehicle
 __all__ = [
     "AcCurrentLimit",
     "AirCirculationMode",
+    "AirRunState",
     "AuthToken",
     "BatteryHeatParams",
     "BydBaseModel",
