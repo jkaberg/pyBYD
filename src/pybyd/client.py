@@ -30,6 +30,7 @@ from pybyd._api import standby as _standby_api
 from pybyd._api import vehicle as _vehicle_api
 from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
+from pybyd._constants import COMMAND_POLL_DELAYS_S, resolve_poll_delays
 from pybyd._crypto.bangcle import BangcleCodec
 from pybyd._crypto.hashing import md5_hex
 from pybyd._mqtt import (
@@ -937,7 +938,8 @@ class BydClient:
         mqtt_event_type: str | None = None,
         mqtt_timeout: float | None = None,
         poll_attempts: int = 10,
-        poll_interval: float = 1.5,
+        poll_interval: float | None = 1.5,
+        poll_ladder: tuple[float, ...] = COMMAND_POLL_DELAYS_S,
         signal_retries: int = 2,
         validate_context: dict[str, Any] | None = None,
     ) -> _M:
@@ -1010,9 +1012,10 @@ class BydClient:
             # Phase 3: HTTP poll fallback
             _logger.debug("MQTT timeout; falling back to HTTP polling for %s vin=%s", label, vin)
             consecutive_unavailable = 0
-            for attempt in range(1, poll_attempts + 1):
-                if poll_interval > 0:
-                    await asyncio.sleep(poll_interval)
+            delays = resolve_poll_delays(poll_attempts, poll_interval, default_ladder=poll_ladder)
+            for attempt, delay in enumerate(delays, start=1):
+                if delay > 0:
+                    await asyncio.sleep(delay)
                 try:
                     latest, serial = await fetch_fn(
                         poll_endpoint,
@@ -1432,7 +1435,7 @@ class BydClient:
         control_params: Mapping[str, Any] | ControlParams | None = None,
         command_pwd: str | None = None,
         poll_attempts: int = 10,
-        poll_interval: float = 1.5,
+        poll_interval: float | None = None,
     ) -> RemoteControlResult:
         """Internal: send a remote command and poll/wait for result."""
         capabilities = await self.get_vehicle_capabilities(vin)
@@ -1667,8 +1670,8 @@ class BydClient:
         charge_way: str,
         enabled: bool = True,
         mqtt_timeout: float | None = None,
-        poll_attempts: int = 6,
-        poll_interval: float = 2.0,
+        poll_attempts: int = 10,
+        poll_interval: float | None = None,
     ) -> ChargeChangeResult:
         """Save a smart-charging schedule and wait for the toggle to settle.
 
@@ -1744,8 +1747,8 @@ class BydClient:
         vin: str,
         *,
         mqtt_timeout: float | None = None,
-        poll_attempts: int = 6,
-        poll_interval: float = 2.0,
+        poll_attempts: int = 10,
+        poll_interval: float | None = None,
     ) -> ChargeChangeResult:
         """Start charging immediately and wait for the toggle to settle.
 
@@ -1824,8 +1827,8 @@ class BydClient:
         vin: str,
         *,
         mqtt_timeout: float | None = None,
-        poll_attempts: int = 6,
-        poll_interval: float = 2.0,
+        poll_attempts: int = 10,
+        poll_interval: float | None = None,
     ) -> ChargeChangeResult:
         """Not supported: the BYD cloud has no working stop-charge command.
 
