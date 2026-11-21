@@ -3,6 +3,32 @@
 USER_AGENT = "okhttp/4.12.0"
 SESSION_EXPIRED_CODES: frozenset[str] = frozenset({"1002", "1005", "1010"})
 
+#: Official 10-step command polling ladder (33 s total).
+COMMAND_POLL_DELAYS_S: tuple[float, ...] = (1.0, 0.5, 0.5, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 10.0)
+
+
+def resolve_poll_delays(
+    poll_attempts: int,
+    poll_interval: float | None,
+    *,
+    default_ladder: tuple[float, ...] = COMMAND_POLL_DELAYS_S,
+) -> list[float]:
+    """Return per-attempt sleep delays in seconds.
+
+    When *poll_interval* is ``None``, slices *default_ladder* to
+    *poll_attempts* (extending with the final step if *poll_attempts* exceeds
+    the ladder length). When an explicit *poll_interval* is provided, repeats
+    that fixed interval *poll_attempts* times.
+    """
+    if poll_attempts <= 0:
+        return []
+    if poll_interval is not None:
+        return [poll_interval] * poll_attempts
+    if poll_attempts <= len(default_ladder):
+        return list(default_ladder[:poll_attempts])
+    return list(default_ladder) + [default_ladder[-1]] * (poll_attempts - len(default_ladder))
+
+
 # ------------------------------------------------------------------
 # BYD climate temperature scale  (°C → scale 1-17)
 # ------------------------------------------------------------------
