@@ -2,6 +2,9 @@
 
 USER_AGENT = "okhttp/4.12.0"
 SESSION_EXPIRED_CODES: frozenset[str] = frozenset({"1002", "1011", "3001", "3003"})
+TOKEN_REFRESH_CODES: frozenset[str] = frozenset({"1030"})
+SERVER_TIME_DIFF_CODES: frozenset[str] = frozenset({"1003"})
+SERVER_TIME_DRIFT_THRESHOLD_MS: int = 30_000
 
 #: Official 10-step command polling ladder (33 s total).
 COMMAND_POLL_DELAYS_S: tuple[float, ...] = (1.0, 0.5, 0.5, 2.0, 2.0, 2.0, 5.0, 5.0, 5.0, 10.0)

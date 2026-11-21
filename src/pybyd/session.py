@@ -38,6 +38,7 @@ class Session(BaseModel):
     user_id: str
     sign_token: str
     encry_token: str
+    refresh_token: str = ""
     created_at: float = Field(default_factory=time.monotonic)
     ttl: float = 12 * 3600
 
@@ -97,3 +98,22 @@ class Session(BaseModel):
     def age(self) -> float:
         """Seconds since the session was created."""
         return time.monotonic() - self.created_at
+
+    def with_refreshed_tokens(
+        self,
+        *,
+        sign_token: str,
+        encry_token: str,
+        refresh_token: str | None = None,
+    ) -> Session:
+        """Return a fresh Session with updated tokens while preserving VIN caches."""
+        refreshed = Session(
+            user_id=self.user_id,
+            sign_token=sign_token,
+            encry_token=encry_token,
+            refresh_token=refresh_token if refresh_token is not None else self.refresh_token,
+            ttl=self.ttl,
+        )
+        refreshed._guest_vins.update(self._guest_vins)
+        refreshed._user_type_settled.update(self._user_type_settled)
+        return refreshed

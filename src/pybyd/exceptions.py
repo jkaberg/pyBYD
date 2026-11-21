@@ -57,9 +57,18 @@ class BydSessionExpiredError(BydAuthenticationError):
     """Session token rejected by the server.
 
     Raised when a post-login API call fails with an error code that
-    indicates the token is no longer valid (e.g. ``1005``).  The client
-    catches this internally to trigger automatic re-authentication.
+    indicates the token is no longer valid (e.g. ``1002``, ``1011``).
+    The client catches this internally to trigger automatic
+    re-authentication.
     """
+
+
+class BydTokenRefreshError(BydSessionExpiredError):
+    """Session token needs refresh or re-login (code ``1030``)."""
+
+
+class BydServerTimeError(BydApiError):
+    """Client clock differs from BYD server clock beyond threshold (code ``1003``)."""
 
 
 class BydRemoteControlError(BydApiError):

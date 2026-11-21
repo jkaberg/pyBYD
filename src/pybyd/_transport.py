@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Mapping
+from email.utils import parsedate_to_datetime
 from typing import Any, Protocol
 
 import aiohttp
 
-from pybyd._constants import USER_AGENT
+from pybyd._constants import SERVER_TIME_DRIFT_THRESHOLD_MS, USER_AGENT
 from pybyd._crypto.bangcle import BangcleCodec
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydTransportError
@@ -47,6 +49,23 @@ class SecureTransport:
         self._codec = codec
         self._http = http_session
         self._logger = logger or _logger
+        self.server_time_offset_ms: int = 0
+
+    def _sync_clock_from_header(self, date_header: str | None) -> None:
+        """Track server-vs-local clock drift beyond 30 s from HTTP Date headers."""
+        if not date_header:
+            return
+        try:
+            server_dt = parsedate_to_datetime(date_header)
+        except (TypeError, ValueError):
+            return
+        server_ms = int(server_dt.timestamp() * 1000)
+        drift_ms = server_ms - int(time.time() * 1000)
+        if abs(drift_ms) > SERVER_TIME_DRIFT_THRESHOLD_MS:
+            self.server_time_offset_ms = drift_ms
+            self._logger.debug("Adjusted BYD server clock offset to %+d ms", drift_ms)
+        elif self.server_time_offset_ms != 0:
+            self.server_time_offset_ms = 0
 
     async def post_secure(self, endpoint: str, outer_payload: Mapping[str, Any]) -> dict[str, Any]:
         """Send a signed request through the Bangcle envelope layer.
@@ -72,6 +91,7 @@ class SecureTransport:
 
         try:
             async with self._http.post(url, data=body, headers=headers) as resp:
+                self._sync_clock_from_header(resp.headers.get("Date"))
                 text = await resp.text()
                 if resp.status != 200:
                     raise BydTransportError(

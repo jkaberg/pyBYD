@@ -19,7 +19,7 @@ import time
 from typing import Any
 
 from pybyd._api._envelope import build_token_outer_envelope
-from pybyd._constants import SESSION_EXPIRED_CODES
+from pybyd._constants import SERVER_TIME_DIFF_CODES, SESSION_EXPIRED_CODES, TOKEN_REFRESH_CODES
 from pybyd._crypto.aes import aes_decrypt_utf8
 from pybyd._redact import redact_for_log
 from pybyd._transport import Transport
@@ -28,8 +28,10 @@ from pybyd.exceptions import (
     BydApiError,
     BydDataUnavailableError,
     BydEndpointNotSupportedError,
+    BydServerTimeError,
     BydServiceBusyError,
     BydSessionExpiredError,
+    BydTokenRefreshError,
 )
 from pybyd.session import Session
 
@@ -100,6 +102,18 @@ def _raise_for_code(
         types.  Checked *before* the generic ``BydApiError`` fallback,
         but *after* session-expired and not-supported checks.
     """
+    if code in TOKEN_REFRESH_CODES:
+        raise BydTokenRefreshError(
+            f"{endpoint} failed: code={code} message={message}",
+            code=code,
+            endpoint=endpoint,
+        )
+    if code in SERVER_TIME_DIFF_CODES:
+        raise BydServerTimeError(
+            f"{endpoint} failed: code={code} message={message}",
+            code=code,
+            endpoint=endpoint,
+        )
     if code in SESSION_EXPIRED_CODES:
         raise BydSessionExpiredError(
             f"{endpoint} failed: code={code} message={message}",
@@ -185,8 +199,11 @@ async def post_token_json(
     This is a thin helper for endpoint modules; it intentionally returns `Any`
     since BYD endpoints may return objects or lists.
     """
+    offset_ms = int(getattr(transport, "server_time_offset_ms", 0) or 0)
     if now_ms is None:
-        now_ms = int(time.time() * 1000)
+        now_ms = int(time.time() * 1000) + offset_ms
+    if offset_ms and "timeStamp" in inner:
+        inner = {**inner, "timeStamp": str(now_ms)}
 
     outer, content_key = build_token_outer_envelope(config, session, inner, now_ms, user_type=user_type)
 
