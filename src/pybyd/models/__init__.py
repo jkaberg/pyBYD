@@ -29,6 +29,7 @@ from pybyd.models.message_center import (
     VehicleMsgItemInfo,
     VehicleMsgListResponse,
 )
+from pybyd.models.ota import OtaStatus, OtaUpgradeInfo, OtaUpgradeResult
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import (
     AirCirculationMode,
@@ -81,6 +82,9 @@ __all__ = [
     "LatestConfigFunction",
     "LockState",
     "OnlineState",
+    "OtaStatus",
+    "OtaUpgradeInfo",
+    "OtaUpgradeResult",
     "PowerGear",
     "PushNotificationState",
     "RemoteCommand",

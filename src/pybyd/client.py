@@ -22,6 +22,7 @@ from pybyd._api import gps as _gps_api
 from pybyd._api import hvac as _hvac_api
 from pybyd._api import latest_config as _latest_config_api
 from pybyd._api import message_center as _message_center_api
+from pybyd._api import ota as _ota_api
 from pybyd._api import push_notifications as _push_api
 from pybyd._api import realtime as _realtime_api
 from pybyd._api import smart_charging as _smart_api
@@ -73,6 +74,7 @@ from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
 from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
+from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
@@ -1854,3 +1856,36 @@ class BydClient:
         not a guaranteed "none scheduled".
         """
         return await self._authed_call(_booking_api.fetch_booking_list, vin)
+
+    async def get_ota_version(self, vin: str) -> OtaUpgradeInfo:
+        """Fetch OTA firmware version, release notes, and night auto-upgrade settings."""
+        return await self._authed_call(_ota_api.fetch_ota_version, vin)
+
+    async def set_ota_auto_upgrade(
+        self,
+        vin: str,
+        *,
+        enabled: bool,
+        auto_upgrade_time: str = "2:00",
+        command_pwd: str | None = None,
+    ) -> CommandAck:
+        """Enable or disable automatic night OTA upgrade and set its scheduled time.
+
+        Parameters
+        ----------
+        enabled : bool
+            Whether night automatic OTA upgrade is enabled.
+        auto_upgrade_time : str
+            Scheduled time in ``H:mm`` format (default ``"2:00"``).
+        command_pwd : str or None
+            6-digit control PIN or its 32-char MD5 hex digest; defaults to
+            ``config.control_pin``.
+        """
+        resolved_pwd = self._require_command_pwd(command_pwd)
+        return await self._authed_call(
+            _ota_api.sync_auto_upgrade,
+            vin,
+            enabled=enabled,
+            auto_upgrade_time=auto_upgrade_time,
+            command_pwd=resolved_pwd,
+        )
