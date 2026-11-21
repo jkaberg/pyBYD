@@ -58,7 +58,7 @@ from pybyd.models.standby import (
     StandbySchedule,
 )
 from pybyd.models.token import AuthToken
-from pybyd.models.vehicle import EmpowerRange, EnergyType, Vehicle
+from pybyd.models.vehicle import EmpowerDetail, EmpowerRange, EnergyType, Vehicle
 
 __all__ = [
     "AcCurrentLimit",
@@ -92,6 +92,7 @@ __all__ = [
     "ConnectState",
     "ControlState",
     "DoorOpenState",
+    "EmpowerDetail",
     "EmpowerRange",
     "EnergyConsumption",
     "EnergyType",

@@ -97,7 +97,7 @@ class BydCar:
             on_state_changed=on_state_changed,
             projection_ttl=projection_ttl,
         )
-        self._capabilities = capabilities or VehicleCapabilities.model_validate(
+        base_capabilities = capabilities or VehicleCapabilities.model_validate(
             {
                 "vin": vin,
                 "source": "implicit_default",
@@ -116,6 +116,11 @@ class BydCar:
                 "close_windows": True,
                 "location": True,
             }
+        )
+        guest_perms = vehicle.granted_permission_codes if vehicle.is_shared else None
+        self._capabilities = base_capabilities.with_guest_permissions(
+            is_shared=vehicle.is_shared,
+            granted_codes=guest_perms,
         )
 
         # --- Capability namespaces ---
@@ -184,6 +189,8 @@ class BydCar:
                 RemoteCommand.OPEN_WINDOWS,
                 self._capabilities,
                 learn_info=vehicle.vehicle_fun_learn_info or None,
+                is_shared=vehicle.is_shared,
+                guest_permissions=guest_perms,
             ).supported,
         )
         self.trunk = TrunkCapability(
