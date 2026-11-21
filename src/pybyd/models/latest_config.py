@@ -330,6 +330,54 @@ class VehicleCapabilities(BydBaseModel):
         supported = sum(1 for spec in FEATURE_REGISTRY if getattr(self, spec.key, False))
         return supported, total
 
+    def with_guest_permissions(
+        self,
+        *,
+        is_shared: bool,
+        granted_codes: frozenset[str] | None,
+    ) -> VehicleCapabilities:
+        """Return a copy with capabilities masked by a shared guest's granted permission codes."""
+        if not is_shared or granted_codes is None:
+            return self
+
+        updates: dict[str, bool] = {}
+        if "21" not in granted_codes:
+            for field in (
+                "lock",
+                "unlock",
+                "climate",
+                "car_on",
+                "steering_wheel_heat",
+                "driver_seat_heat",
+                "driver_seat_ventilation",
+                "passenger_seat_heat",
+                "passenger_seat_ventilation",
+                "rear_left_seat_heat",
+                "rear_right_seat_heat",
+                "rear_left_seat_ventilation",
+                "rear_right_seat_ventilation",
+                "find_car",
+                "flash_lights",
+                "close_windows",
+                "open_windows",
+                "open_trunk",
+                "close_trunk",
+                "one_click_shutdown",
+                "scheduled_departure",
+            ):
+                updates[field] = False
+        if "31" not in granted_codes:
+            updates["location"] = False
+        if "41" not in granted_codes:
+            updates["start_charge"] = False
+            updates["stop_charge"] = False
+        if "43" not in granted_codes:
+            updates["battery_heat"] = False
+
+        if not updates:
+            return self
+        return self.model_copy(update=updates)
+
     @classmethod
     def unknown(cls, vin: str, *, reason: str = "unavailable") -> VehicleCapabilities:
         """Return an unknown capability map (treat as unavailable by strict consumers)."""
