@@ -13,14 +13,17 @@ import secrets
 import time
 from typing import Any
 
+from pybyd._constants import SERVER_TIME_DIFF_CODES
 from pybyd._crypto.aes import aes_decrypt_utf8, aes_encrypt_hex
 from pybyd._crypto.hashing import compute_checkcode, md5_hex, pwd_login_key, sha1_mixed
 from pybyd._crypto.signing import build_sign_string
 from pybyd._redact import redact_for_log
+from pybyd._transport import Transport
 from pybyd._version import __version__ as _pybyd_version
 from pybyd.config import BydConfig
-from pybyd.exceptions import BydAuthenticationError
+from pybyd.exceptions import BydAuthenticationError, BydServerTimeError
 from pybyd.models.token import AuthToken
+from pybyd.session import Session
 
 
 def _clean_app_version(version: str) -> str:
@@ -147,10 +150,17 @@ def parse_login_response(
     BydAuthenticationError
         If login failed or response is missing token fields.
     """
-    if str(outer_response.get("code")) != "0":
+    code = str(outer_response.get("code", ""))
+    if code != "0":
+        if code in SERVER_TIME_DIFF_CODES:
+            raise BydServerTimeError(
+                f"Login failed: code={code} message={outer_response.get('message', '')}",
+                code=code,
+                endpoint="/app/account/login",
+            )
         raise BydAuthenticationError(
             f"Login failed: code={outer_response.get('code')} message={outer_response.get('message', '')}",
-            code=str(outer_response.get("code", "")),
+            code=code,
             endpoint="/app/account/login",
         )
 
@@ -172,9 +182,50 @@ def parse_login_response(
             endpoint="/app/account/login",
         )
 
+    new_tokens = inner.get("newTokens") if isinstance(inner, dict) else None
+    refresh_token = ""
+    if isinstance(new_tokens, dict) and new_tokens.get("refreshToken"):
+        refresh_token = str(new_tokens["refreshToken"])
+    elif isinstance(token, dict) and token.get("refreshToken"):
+        refresh_token = str(token["refreshToken"])
+
     return AuthToken(
         user_id=str(token["userId"]),
         sign_token=str(token["signToken"]),
         encry_token=str(token["encryToken"]),
+        refresh_token=refresh_token,
         raw=token,
+    )
+
+
+async def refresh_session_token(
+    config: BydConfig,
+    session: Session,
+    transport: Transport,
+) -> AuthToken:
+    """Refresh ``encryToken`` and ``signToken`` via ``/app/token/refresh``."""
+    from pybyd._api._common import build_inner_base, post_token_json
+
+    inner = build_inner_base(config)
+    inner["refreshToken"] = session.refresh_token
+    decoded = await post_token_json(
+        endpoint="/app/token/refresh",
+        config=config,
+        session=session,
+        transport=transport,
+        inner=inner,
+    )
+    payload = decoded if isinstance(decoded, dict) else {}
+    token_obj = payload.get("newTokens") if isinstance(payload.get("newTokens"), dict) else payload
+    if not isinstance(token_obj, dict) or not token_obj.get("signToken") or not token_obj.get("encryToken"):
+        raise BydAuthenticationError(
+            "Token refresh response missing signToken/encryToken",
+            endpoint="/app/token/refresh",
+        )
+    return AuthToken(
+        user_id=str(token_obj.get("userId") or session.user_id),
+        sign_token=str(token_obj["signToken"]),
+        encry_token=str(token_obj["encryToken"]),
+        refresh_token=str(token_obj.get("refreshToken") or session.refresh_token),
+        raw=token_obj,
     )

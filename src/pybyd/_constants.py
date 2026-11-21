@@ -2,6 +2,9 @@
 
 USER_AGENT = "okhttp/4.12.0"
 SESSION_EXPIRED_CODES: frozenset[str] = frozenset({"1002", "1011", "3001", "3003"})
+TOKEN_REFRESH_CODES: frozenset[str] = frozenset({"1030"})
+SERVER_TIME_DIFF_CODES: frozenset[str] = frozenset({"1003"})
+SERVER_TIME_DRIFT_THRESHOLD_MS: int = 30_000
 
 # ------------------------------------------------------------------
 # BYD climate temperature scale  (°C → scale 1-17)

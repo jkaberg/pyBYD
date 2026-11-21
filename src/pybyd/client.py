@@ -29,7 +29,7 @@ from pybyd._api import smart_charging as _smart_api
 from pybyd._api import standby as _standby_api
 from pybyd._api import vehicle as _vehicle_api
 from pybyd._api import vehicle_settings as _settings_api
-from pybyd._api.login import build_login_request, parse_login_response
+from pybyd._api.login import build_login_request, parse_login_response, refresh_session_token
 from pybyd._crypto.bangcle import BangcleCodec
 from pybyd._crypto.hashing import md5_hex
 from pybyd._mqtt import (
@@ -48,7 +48,9 @@ from pybyd.exceptions import (
     BydEndpointNotSupportedError,
     BydError,
     BydRemoteControlError,
+    BydServerTimeError,
     BydSessionExpiredError,
+    BydTokenRefreshError,
 )
 from pybyd.models._base import BydBaseModel
 from pybyd.models.booking import BookingList
@@ -251,15 +253,23 @@ class BydClient:
     async def login(self) -> None:
         """Authenticate against the BYD API and obtain session tokens."""
         transport = self._require_transport()
-        outer = build_login_request(self._config, _now_ms())
-        response = await transport.post_secure("/app/account/login", outer)
-        token = parse_login_response(response, self._config.password)
+        for attempt in range(2):
+            offset_ms = int(getattr(transport, "server_time_offset_ms", 0) or 0)
+            outer = build_login_request(self._config, _now_ms() + offset_ms)
+            response = await transport.post_secure("/app/account/login", outer)
+            try:
+                token = parse_login_response(response, self._config.password)
+                break
+            except BydServerTimeError:
+                if attempt == 1:
+                    raise
 
         ttl = self._config.session_ttl if self._config.session_ttl > 0 else float("inf")
         self._session = Session(
             user_id=token.user_id,
             sign_token=token.sign_token,
             encry_token=token.encry_token,
+            refresh_token=token.refresh_token,
             ttl=ttl,
         )
         # What we know about each car's userType outlives the login.
@@ -427,9 +437,35 @@ class BydClient:
             }
         )
 
+    async def _refresh_or_relogin(self) -> None:
+        """Refresh tokens via ``/app/token/refresh`` when available, else re-login."""
+        session = self._session
+        transport = self._transport
+        if session is not None and transport is not None and session.refresh_token:
+            try:
+                refreshed = await refresh_session_token(self._config, session, transport)
+                self._session = session.with_refreshed_tokens(
+                    sign_token=refreshed.sign_token,
+                    encry_token=refreshed.encry_token,
+                    refresh_token=refreshed.refresh_token,
+                )
+                if self._mqtt_runtime is not None:
+                    self._mqtt_runtime.update_decrypt_key(self._session.content_key())
+                return
+            except BydError:
+                _logger.debug("Token refresh failed; falling back to full re-login", exc_info=True)
+        self.invalidate_session()
+        await self.ensure_session()
+
     async def _call_with_reauth(self, fn: Callable[[], Awaitable[T]]) -> T:
-        """Run an API call, retrying once on session expiry."""
+        """Run an API call, retrying once on session expiry, token refresh, or clock drift."""
         try:
+            return await fn()
+        except BydTokenRefreshError:
+            await self._refresh_or_relogin()
+            return await fn()
+        except BydServerTimeError:
+            # SecureTransport updates server_time_offset_ms from the HTTP Date header.
             return await fn()
         except BydSessionExpiredError:
             self.invalidate_session()

@@ -27,4 +27,5 @@ class AuthToken(BaseModel):
     user_id: str
     sign_token: str
     encry_token: str
+    refresh_token: str = ""
     raw: dict[str, Any]
