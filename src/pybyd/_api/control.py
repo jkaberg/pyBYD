@@ -22,6 +22,7 @@ from pybyd._api._common import (
     post_token_json,
     post_vehicle_json,
 )
+from pybyd._constants import resolve_poll_delays
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.exceptions import (
@@ -219,7 +220,7 @@ async def poll_remote_control(
     control_params: dict[str, Any] | None = None,
     command_pwd: str | None = None,
     poll_attempts: int = 10,
-    poll_interval: float = 1.5,
+    poll_interval: float | None = None,
     rate_limit_retries: int = 3,
     rate_limit_delay: float = 5.0,
     command_retries: int = 3,
@@ -247,8 +248,10 @@ async def poll_remote_control(
         Optional control password (PIN).
     poll_attempts : int
         Maximum number of result poll attempts.
-    poll_interval : float
-        Seconds between poll attempts.
+    poll_interval : float or None
+        Seconds between poll attempts, or ``None`` (default) to use the
+        official 33 s 10-step polling ladder
+        ``[1, 0.5, 0.5, 2, 2, 2, 5, 5, 5, 10]`` s.
     rate_limit_retries : int
         How many times to retry the initial trigger when the server
         returns code 6024 ("previous command still in progress").
@@ -320,7 +323,7 @@ async def _poll_remote_control_once(
     control_params: dict[str, Any] | None = None,
     command_pwd: str | None = None,
     poll_attempts: int = 10,
-    poll_interval: float = 1.5,
+    poll_interval: float | None = None,
     rate_limit_retries: int = 3,
     rate_limit_delay: float = 5.0,
     mqtt_result_waiter: Callable[[str | None], Awaitable[RemoteControlResult | None]] | None = None,
@@ -435,9 +438,9 @@ async def _poll_remote_control_once(
     # Phase 2: Poll for results
     latest = result
     reached_terminal = False
-    for attempt in range(1, poll_attempts + 1):
-        if poll_interval > 0:
-            await asyncio.sleep(poll_interval)
+    for attempt, delay in enumerate(resolve_poll_delays(poll_attempts, poll_interval), start=1):
+        if delay > 0:
+            await asyncio.sleep(delay)
 
         try:
             latest, serial = await _fetch_control_endpoint(
