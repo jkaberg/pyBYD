@@ -297,7 +297,9 @@ def _filter_guest_function_nos(
     """Apply level-3/4 guest functionNo allow-list when present in ``guest_permissions``."""
     if not is_shared or not guest_permissions:
         return function_nos
-    level34 = {code for code in guest_permissions if len(code) >= 4 and code.isdigit()}
+    # only codes that are real command functionNos count as an allow-list,
+    # deeper tree codes (eg "2101") must not wipe out every command
+    level34 = guest_permissions & known_command_function_nos()
     if not level34:
         return function_nos
     allowed = level34 | _GUEST_ALWAYS_ALLOWED_FUNCTION_NOS

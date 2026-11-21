@@ -176,3 +176,17 @@ def test_byd_car_masks_capabilities_for_shared_guest() -> None:
     assert car.battery.available is False
     assert car.capabilities.battery_heat is False
     assert car.capabilities.location is False
+
+
+def test_command_gating_ignores_deep_codes_that_are_not_function_nos() -> None:
+    caps = _caps_all()
+    # a level-3 tree code that is not a command functionNo must not act as an allow-list
+    guest_perms = frozenset({"2", "21", "2101"})
+
+    lock_verdict = evaluate_command_gate(
+        RemoteCommand.LOCK,
+        caps,
+        is_shared=True,
+        guest_permissions=guest_perms,
+    )
+    assert lock_verdict.supported is True
