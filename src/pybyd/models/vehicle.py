@@ -57,6 +57,8 @@ class Vehicle(BydBaseModel):
     empower_type: int | None = None
     permission_status: int | None = None
     tbox_version: str = ""
+    not_upgrade_now_switch: str = ""
+    support_ota_night_upgrade: str = ""
     vehicle_state: str = ""
     auto_bought_time: BydTimestamp = None
     yun_active_time: BydTimestamp = None
@@ -72,6 +74,11 @@ class Vehicle(BydBaseModel):
     @property
     def is_shared(self) -> bool:
         return self.empower_type is not None and self.empower_type < 0
+
+    @property
+    def ota_upgrade_supported(self) -> bool:
+        """Whether the vehicle's learn flags indicate mobile OTA support."""
+        return self.vehicle_fun_learn_info.get("otaUpgrade") == 1
 
     @model_validator(mode="after")
     def _fill_missing_pics(self) -> Vehicle:

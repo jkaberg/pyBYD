@@ -44,6 +44,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities
+from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit
 from pybyd.models.vehicle import Vehicle
@@ -310,6 +311,25 @@ class BydCar:
         )
         await self.update_charging()
         return result
+
+    async def get_ota_version(self) -> OtaUpgradeInfo:
+        """Fetch OTA firmware version and night auto-upgrade settings for this vehicle."""
+        return await self._client.get_ota_version(self._vin)
+
+    async def set_ota_auto_upgrade(
+        self,
+        *,
+        enabled: bool,
+        auto_upgrade_time: str = "2:00",
+        command_pwd: str | None = None,
+    ) -> None:
+        """Update night automatic OTA upgrade settings for this vehicle."""
+        await self._client.set_ota_auto_upgrade(
+            self._vin,
+            enabled=enabled,
+            auto_upgrade_time=auto_upgrade_time,
+            command_pwd=command_pwd,
+        )
 
     # ------------------------------------------------------------------
     # MQTT integration
