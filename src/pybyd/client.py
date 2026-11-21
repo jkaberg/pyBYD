@@ -8,7 +8,7 @@ import functools
 import logging
 import random
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -26,6 +26,7 @@ from pybyd._api import ota as _ota_api
 from pybyd._api import push_notifications as _push_api
 from pybyd._api import realtime as _realtime_api
 from pybyd._api import smart_charging as _smart_api
+from pybyd._api import standby as _standby_api
 from pybyd._api import vehicle as _vehicle_api
 from pybyd._api import vehicle_settings as _settings_api
 from pybyd._api.login import build_login_request, parse_login_response
@@ -78,6 +79,15 @@ from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
 from pybyd.models.realtime import VehicleRealtimeData
 from pybyd.models.smart_charging import AcCurrentLimit, SmartChargingSchedule
+from pybyd.models.standby import (
+    COMMAND_CLIMATE,
+    PLAN_TYPE_USER,
+    StandbyPlan,
+    StandbyPlanCommand,
+    StandbyPlanList,
+    StandbyPlanRunResult,
+    StandbySchedule,
+)
 from pybyd.models.vehicle import EnergyType, Vehicle
 from pybyd.session import Session
 
@@ -85,6 +95,7 @@ if TYPE_CHECKING:
     from pybyd.car import BydCar
 
 _logger = logging.getLogger(__name__)
+
 
 T = TypeVar("T")
 _M = TypeVar("_M", bound=BydBaseModel)
@@ -1892,3 +1903,123 @@ class BydClient:
             auto_upgrade_time=auto_upgrade_time,
             command_pwd=resolved_pwd,
         )
+
+    async def get_standby_plans(self, vin: str) -> StandbyPlanList:
+        """Fetch the preconditioning plans app 3.6.0 schedules climate with."""
+        return await self._authed_call(_standby_api.fetch_standby_plans, vin)
+
+    async def save_standby_plan(
+        self,
+        vin: str,
+        plan: StandbyPlan,
+        *,
+        schedule: StandbySchedule | None = None,
+    ) -> StandbyPlanList:
+        """Save a plan's name, commands and schedule, then return the fresh plans.
+
+        ``schedule`` of ``None`` keeps the plan's current one; use
+        :meth:`StandbySchedule.off` to unschedule.  Edit ``plan.commands``
+        (eg the ``OPENAIR`` ``controlParamsMap``) to change what the plan
+        does.  Saving with ``default_plan=1`` makes it the default, the
+        cloud clears the flag on the others.
+
+        A once run less than 20 min ahead raises
+        :class:`BydStandbyScheduleError`; a daily or weekly one is saved
+        but skips today, which only the returned list's ``message`` says.
+        """
+        saved = await self._authed_call(
+            _standby_api.save_standby_plan,
+            vin,
+            plan,
+            schedule if schedule is not None else plan.schedule,
+        )
+        plans = await self.get_standby_plans(vin)
+        return plans.model_copy(update={"message": saved.get("message") or None})
+
+    async def create_standby_plan(
+        self,
+        vin: str,
+        name: str,
+        commands: Sequence[StandbyPlanCommand],
+        *,
+        schedule: StandbySchedule | None = None,
+    ) -> StandbyPlan:
+        """Create a user plan and return it.
+
+        ``commands`` are what the plan does, eg copied from the preset
+        plan.  It must include the A/C (``OPENAIR``); seats and steering
+        wheel only go on top of it.  ``save`` doesn't return the new id,
+        so it's picked out of the next ``list``.
+        """
+        if not any(command.command_type == COMMAND_CLIMATE for command in commands):
+            raise ValueError("a plan needs an OPENAIR command")
+        before = {plan.id for plan in (await self.get_standby_plans(vin)).plans}
+        plan = StandbyPlan(
+            plan_name=name,
+            plan_type=PLAN_TYPE_USER,
+            default_plan=0,
+            commands=[command.model_copy(update={"command_id": None}) for command in commands],
+        )
+        await self._authed_call(
+            _standby_api.save_standby_plan,
+            vin,
+            plan,
+            schedule or StandbySchedule.off(),
+        )
+        after = await self.get_standby_plans(vin)
+        created = [p for p in after.plans if p.id not in before]
+        if len(created) != 1:
+            raise BydError(f"could not find the created plan {name!r} in the plan list")
+        return created[0]
+
+    async def set_default_standby_plan(self, vin: str, plan_id: str) -> StandbyPlanList:
+        """Make a plan the default, then return the fresh plans."""
+        await self._authed_call(_standby_api.set_default_standby_plan, vin, plan_id)
+        return await self.get_standby_plans(vin)
+
+    async def delete_standby_plan(self, vin: str, plan_id: str) -> StandbyPlanList:
+        """Delete a user plan, then return the fresh plans.
+
+        The preset plan can't be deleted in the app; unschedule it with
+        :meth:`save_standby_plan` instead.
+        """
+        await self._authed_call(_standby_api.delete_standby_plan, vin, plan_id)
+        return await self.get_standby_plans(vin)
+
+    async def run_standby_plan(
+        self,
+        vin: str,
+        plan_id: str,
+        *,
+        poll_attempts: int = 10,
+        poll_interval: float = 1.5,
+    ) -> StandbyPlanRunResult:
+        """Run a plan now, keeping its schedule.
+
+        ``send-result`` goes from ``res`` 1 to 2 after about six seconds.
+        A result still at ``1`` when polling gives up is returned as is,
+        since the app itself stops polling there; other values raise.
+        """
+
+        async def _call() -> StandbyPlanRunResult:
+            result = await self._trigger_and_poll(
+                vin=vin,
+                trigger_endpoint=_standby_api.SEND_ENDPOINT,
+                poll_endpoint=_standby_api.SEND_RESULT_ENDPOINT,
+                fetch_fn=_standby_api.make_send_fetch_fn(plan_id),
+                is_ready=_standby_api.is_send_ready,
+                model_cls=StandbyPlanRunResult,
+                label="StandbyPlanRun",
+                mqtt_timeout=0,
+                poll_attempts=poll_attempts,
+                poll_interval=poll_interval,
+            )
+            if result.res is not None and result.res not in (1, 2):
+                raise BydRemoteControlError(
+                    f"standby plan run rejected by cloud (res={result.res}, message={result.message!r})",
+                    code=str(result.res),
+                    endpoint=_standby_api.SEND_RESULT_ENDPOINT,
+                )
+            return result.model_copy(update={"vin": vin})
+
+        return await self._call_with_reauth(_call)

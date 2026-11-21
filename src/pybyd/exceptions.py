@@ -109,6 +109,15 @@ class BydRateLimitError(BydApiError):
     """
 
 
+class BydStandbyScheduleError(BydApiError):
+    """A plan's run time was refused (code 6111).
+
+    A one-off run has to be at least 20 min ahead and within the next
+    30 days.  Daily and weekly runs inside 20 min are saved instead and
+    skip today, see :attr:`pybyd.models.StandbyPlanList.message`.
+    """
+
+
 class BydServiceBusyError(BydApiError):
     """Backend busy / soft rate-limit (code 1008, "Error de servicio").
 

@@ -66,3 +66,8 @@ def minutes_to_time_span(minutes: int) -> int:
     if code is None:
         raise ValueError(f"duration must be one of {VALID_CLIMATE_DURATIONS} minutes, got {minutes}")
     return code
+
+
+def time_span_to_minutes(code: int) -> int | None:
+    """Convert a BYD ``time_span`` code (1-5) back to minutes, ``None`` if unknown."""
+    return next((minutes for minutes, value in _DURATION_TO_CODE.items() if value == code), None)

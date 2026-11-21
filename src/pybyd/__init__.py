@@ -18,9 +18,11 @@ from pybyd.exceptions import (
     BydRemoteControlError,
     BydServiceBusyError,
     BydSessionExpiredError,
+    BydStandbyScheduleError,
     BydTransportError,
 )
 from pybyd.models import (
+    DEFAULT_TEMP_OFFSET_C,
     VALID_CLIMATE_DURATIONS,
     AcCurrentLimit,
     ChargingStatus,
@@ -67,6 +69,7 @@ __all__ = [
     "BydRateLimitError",
     "BydRemoteControlError",
     "BydServiceBusyError",
+    "BydStandbyScheduleError",
     "BydSessionExpiredError",
     "BydTransportError",
     "CommandAckEvent",
@@ -80,6 +83,7 @@ __all__ = [
     "SeatLevel",
     "SeatPosition",
     "TirePressureUnit",
+    "DEFAULT_TEMP_OFFSET_C",
     "VALID_CLIMATE_DURATIONS",
     "VehicleCapabilities",
     "Vehicle",
