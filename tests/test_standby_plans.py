@@ -219,7 +219,7 @@ def _client() -> BydClient:
     return BydClient(BydConfig(username="user@example.invalid", password="unused"))
 
 
-async def _passthrough(fn):  # type: ignore[no-untyped-def]
+async def _passthrough(fn, **_kwargs):  # type: ignore[no-untyped-def]
     return await fn()
 
 
