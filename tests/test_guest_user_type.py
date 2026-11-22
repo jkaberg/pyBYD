@@ -118,14 +118,14 @@ async def test_owner_never_sends_user_type() -> None:
     session = _session()
     cloud = FakeCloud(session, guest=False)
     assert await _post(session, cloud) == {"ok": 1}
-    assert [c.get("userType") for c in cloud.calls] == [None]
+    assert [c.get("userType") for c in cloud.calls] == ["0"]
 
 
 async def test_unlisted_guest_is_corrected_by_the_answer() -> None:
     session = _session()
     cloud = FakeCloud(session, guest=True)
     assert await _post(session, cloud) == {"ok": 1}
-    assert [c.get("userType") for c in cloud.calls] == [None, "1"]
+    assert [c.get("userType") for c in cloud.calls] == ["0", "1"]
     assert session.guest_vins[VIN] is True
     # The retry is a new request, not a replay of the first one.
     assert cloud.calls[0]["encryData"] != cloud.calls[1]["encryData"]
@@ -140,7 +140,7 @@ async def test_wrongly_flagged_owner_is_corrected_by_the_answer() -> None:
     session.guest_vins[VIN] = True
     cloud = FakeCloud(session, guest=False)
     assert await _post(session, cloud) == {"ok": 1}
-    assert [c.get("userType") for c in cloud.calls] == ["1", None]
+    assert [c.get("userType") for c in cloud.calls] == ["1", "0"]
     assert session.guest_vins[VIN] is False
 
 
@@ -224,3 +224,15 @@ async def test_vehicle_list_seeds_the_guess_and_it_survives_a_login(
     monkeypatch.setattr(client, "_authed_call", _fake_authed_call)
     await client.get_vehicles()
     assert client._guest_vins[VIN] is guest
+
+
+async def test_owner_sends_signed_user_type_zero() -> None:
+    session = _session()
+    cloud = FakeCloud(session, guest=False)
+    await _post(session, cloud)
+    assert [c.get("userType") for c in cloud.calls] == ["0"]
+    config = _config()
+    outer, _ = build_token_outer_envelope(
+        config, session, build_inner_base(config, now_ms=1, vin=VIN), 1, user_type="0"
+    )
+    assert outer["userType"] == "0"

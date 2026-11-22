@@ -264,7 +264,7 @@ async def test_fetch_gps_endpoint_unlisted_guest_retries_user_type_then_maps_800
 
     assert exc_info.value.code == "8002"
     assert exc_info.value.endpoint == "/control/getGpsInfo"
-    assert [outer.get("userType") for _, outer in cloud.calls] == [None, "1"]
+    assert [outer.get("userType") for _, outer in cloud.calls] == ["0", "1"]
     assert session.guest_vins[vin] is True
     assert (vin, "/control/getGpsInfo") not in session.user_type_settled
 
@@ -288,7 +288,7 @@ async def test_fetch_gps_endpoint_owner_wrong_user_type_retry_still_works() -> N
 
     assert serial == "ser-1"
     assert decoded["data"]["latitude"] == 52.0
-    assert [outer.get("userType") for _, outer in cloud.calls] == ["1", None]
+    assert [outer.get("userType") for _, outer in cloud.calls] == ["1", "0"]
     assert session.guest_vins[vin] is False
 
 

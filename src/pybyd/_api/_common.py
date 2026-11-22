@@ -47,7 +47,8 @@ SERVICE_BUSY_CODES: frozenset[str] = frozenset({"1008"})
 VEHICLE_UNREACHABLE_CODES: frozenset[str] = frozenset({"6002"})
 
 #: Outer ``userType`` sent by an account the car was shared with ("Family
-#: and friends"). The owner leaves the field out.
+#: and friends"). Owners send ``"0"`` to match the official app.
+USER_TYPE_OWNER = "0"
 USER_TYPE_GUEST = "1"
 
 #: What the cloud answers to a vehicle request sent with the wrong
@@ -263,7 +264,7 @@ async def post_vehicle_json(
             vin=vin,
             not_supported_codes=not_supported_codes,
             extra_code_map=extra_code_map,
-            user_type=USER_TYPE_GUEST if guest else None,
+            user_type=USER_TYPE_GUEST if guest else USER_TYPE_OWNER,
         )
     except BydSessionExpiredError:
         raise
@@ -285,7 +286,7 @@ async def post_vehicle_json(
                 vin=vin,
                 not_supported_codes=not_supported_codes,
                 extra_code_map=extra_code_map,
-                user_type=None if guest else USER_TYPE_GUEST,
+                user_type=USER_TYPE_OWNER if guest else USER_TYPE_GUEST,
             )
         except BydSessionExpiredError:
             raise
