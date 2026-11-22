@@ -88,7 +88,9 @@ class HvacStatus(BydBaseModel):
 
     # --- A/C state ---
     ac_switch: AcSwitch | None = None
-    """A/C switch state."""
+    """A/C switch state. On the ATTO 3 EVO it follows :attr:`status`; on a
+    Seal it stays ``ON`` with the climate off, so it looks like the A/C
+    button setting rather than the compressor. See issue #20."""
     status: HvacOverallStatus | None = None
     """Overall HVAC status."""
     air_conditioning_mode: AirConditioningMode | None = None
@@ -167,7 +169,11 @@ class HvacStatus(BydBaseModel):
 
     @property
     def is_compressor_on(self) -> bool | None:
-        """Whether the A/C compressor is on, ``None`` when not reported."""
+        """Whether :attr:`ac_switch` reads on, ``None`` when not reported.
+
+        Not a reliable compressor signal on every model (see
+        :attr:`ac_switch`); :attr:`air_run_state` tracks actual running.
+        """
         if self.ac_switch is None or self.ac_switch == AcSwitch.UNKNOWN:
             return None
         return self.ac_switch == AcSwitch.ON

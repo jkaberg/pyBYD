@@ -629,7 +629,9 @@ class VehicleRealtimeData(BydBaseModel):
     energy counter without live confirmation (none of the fields on
     this endpoint expose absolute lifetime kWh — see the note below)."""
     gl: float | None = None
-    """Instantaneous battery power (W)."""
+    """Instantaneous battery power (W). Positive while charging (into the
+    pack), negative while driving or discharging; opposite sign to
+    :attr:`rate`. Observed on a Seal (MEA), see issue #20."""
     total_energy: str | None = None
     """Lifetime AVERAGE EV consumption rate, kWh/100km (string; "--"
     when unavailable) — despite the name, this is **not** an absolute
@@ -677,7 +679,9 @@ class VehicleRealtimeData(BydBaseModel):
     ect_value: int | None = None
     """Engine coolant temperature (deg C)."""
     pwr: int | None = None
-    """Power warning. 0=normal, >0=warning."""
+    """Unmapped, NOT a warning lamp. Reads ``2`` on healthy cars whether
+    parked, charging or driving (Seal, Sealion 7); ``0`` only in asleep
+    placeholders. See issue #20."""
 
     # --- Feature states ---
     sentry_status: SentryStatus = SentryStatus.UNKNOWN
@@ -792,7 +796,8 @@ class VehicleRealtimeData(BydBaseModel):
     steering_system: int | None = None
     """Steering system warning. 0=normal."""
     ok_light: int | None = None
-    """OK/ready indicator. 0=off."""
+    """OK/ready indicator. 0=off, 1=on; tracks :attr:`power_gear`. Not yet
+    known whether it separates ACC from ready-to-drive."""
 
     # --- Features (extended) ---
     repair_mode_switch: int | str | None = None
