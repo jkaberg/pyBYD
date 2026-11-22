@@ -28,6 +28,7 @@ def test_rate_keeps_fast_charge_values(raw: int, expected: float | None) -> None
     ("charge_state", "expected"),
     [
         (ChargingState.CHARGING, True),
+        (ChargingState.WAITING_FOR_SCHEDULE, True),
         (ChargingState.CONNECTED, None),
         (ChargingState.NOT_CHARGING, None),
         (ChargingState.UNKNOWN, None),
@@ -56,3 +57,23 @@ def test_issue_20_function_nos_are_known() -> None:
     known = registered_latest_config_function_nos()
     for fn in ("1018", "1019", "1024", "1025", "1032", "1033", "10020006", "10030012", "10030014", "10030017"):
         assert fn in known
+
+
+def test_waiting_for_schedule_and_countdown() -> None:
+    # Seal, plugged in with a daily schedule starting in 6 minutes (issue #20)
+    rt = VehicleRealtimeData.model_validate(
+        {"chargeState": 9, "flashChargeState": 9, "waitStatus": 1, "chargeStartTimeHour": 0, "chargeStartTimeMin": 6}
+    )
+    assert rt.charge_state == ChargingState.WAITING_FOR_SCHEDULE
+    assert rt.is_charging is False
+    assert rt.wait_status == 1
+    assert rt.time_to_scheduled_start_minutes == 6
+
+    tomorrow = VehicleRealtimeData.model_validate({"chargeStartTimeHour": 19, "chargeStartTimeMin": 41})
+    assert tomorrow.time_to_scheduled_start_minutes == 19 * 60 + 41
+
+
+def test_no_countdown_outside_a_wait() -> None:
+    rt = VehicleRealtimeData.model_validate({"chargeState": 15, "waitStatus": 0})
+    assert rt.charge_start_time_hour is None
+    assert rt.time_to_scheduled_start_minutes is None
