@@ -21,6 +21,7 @@ from pybyd._api import energy as _energy_api
 from pybyd._api import gps as _gps_api
 from pybyd._api import hvac as _hvac_api
 from pybyd._api import latest_config as _latest_config_api
+from pybyd._api import maintenance as _maintenance_api
 from pybyd._api import message_center as _message_center_api
 from pybyd._api import ota as _ota_api
 from pybyd._api import push_notifications as _push_api
@@ -78,6 +79,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
+from pybyd.models.maintenance import MaintenanceHistory
 from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
@@ -2168,6 +2170,10 @@ class BydClient:
             auto_upgrade_time=auto_upgrade_time,
             command_pwd=resolved_pwd,
         )
+
+    async def get_maintenance_history(self, vin: str) -> MaintenanceHistory:
+        """Fetch past workshop visits (service history)."""
+        return await self._authed_call(_maintenance_api.fetch_maintenance_history, vin, probe_busy_session=True)
 
     async def get_standby_plans(self, vin: str) -> StandbyPlanList:
         """Fetch the preconditioning plans app 3.6.0 schedules climate with."""

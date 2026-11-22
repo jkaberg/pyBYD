@@ -24,6 +24,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus, celsius_to_scale
 from pybyd.models.latest_config import LatestConfigFunction, VehicleCapabilities, VehicleLatestConfig
+from pybyd.models.maintenance import MaintenanceHistory, MaintenanceRecord
 from pybyd.models.message_center import (
     NotificationCategory,
     VehicleMsgItemInfo,
@@ -100,6 +101,8 @@ __all__ = [
     "HvacStatus",
     "LatestConfigFunction",
     "LockState",
+    "MaintenanceHistory",
+    "MaintenanceRecord",
     "OnlineState",
     "OtaStatus",
     "OtaUpgradeInfo",
