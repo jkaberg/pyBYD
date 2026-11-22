@@ -78,5 +78,10 @@ async def test_client_get_ac_current_limit_resolves_energy_type() -> None:
         result = await client.get_ac_current_limit(_VIN)
 
     energy_mock.assert_awaited_once_with(_VIN)
-    authed_mock.assert_awaited_once_with(sc.fetch_ac_current_limit, _VIN, energy_type=EnergyType.EV)
+    authed_mock.assert_awaited_once_with(
+        sc.fetch_ac_current_limit,
+        _VIN,
+        probe_busy_session=True,
+        energy_type=EnergyType.EV,
+    )
     assert result.current_ev_current_limit == "MAX"
