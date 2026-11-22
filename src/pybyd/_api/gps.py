@@ -12,12 +12,16 @@ from typing import Any
 from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, post_vehicle_json
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
-from pybyd.exceptions import BydDataUnavailableError
+from pybyd.exceptions import BydDataUnavailableError, BydEndpointNotSupportedError
 from pybyd.session import Session
 
 #: API error codes indicating GPS data is temporarily unavailable
 #: (e.g. vehicle has no satellite fix while parked in a garage).
 GPS_DATA_UNAVAILABLE_CODES: frozenset[str] = frozenset({"6051"})
+
+#: API error codes indicating the shared ("Family & friends") guest
+#: account does not have location permission (code ``"31"``) granted.
+GPS_PERMISSION_DENIED_CODES: frozenset[str] = frozenset({"8002"})
 
 
 def is_gps_info_ready(gps_info: dict[str, Any]) -> bool:
@@ -43,7 +47,10 @@ async def fetch_gps_endpoint(
         inner=inner,
         vin=vin,
         not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
-        extra_code_map={GPS_DATA_UNAVAILABLE_CODES: BydDataUnavailableError},
+        extra_code_map={
+            GPS_DATA_UNAVAILABLE_CODES: BydDataUnavailableError,
+            GPS_PERMISSION_DENIED_CODES: BydEndpointNotSupportedError,
+        },
     )
     if not isinstance(decoded, dict):
         return {}, request_serial

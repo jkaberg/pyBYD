@@ -91,12 +91,14 @@ class BydControlPasswordError(BydApiError):
 
 
 class BydEndpointNotSupportedError(BydApiError):
-    """Endpoint not supported for this vehicle/region (e.g. code 1001).
+    """Endpoint not supported or not permitted for this vehicle/account (e.g. code 1001, 8002).
 
     Raised when the API returns an error code indicating the requested
     endpoint is not available for the user's vehicle model, region, or
-    firmware version.  Consumers should stop retrying the endpoint for
-    the affected VIN.
+    firmware version, or when a shared guest account lacks permission
+    for the endpoint (for example GPS code ``8002`` or client-side
+    ``guest_permission_denied``).  Consumers should stop retrying the
+    endpoint for the affected VIN.
     """
 
 
