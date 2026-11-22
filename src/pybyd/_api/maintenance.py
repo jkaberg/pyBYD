@@ -1,8 +1,8 @@
-"""Vehicle maintenance endpoints (``/maintenance?s=App.AppMaintenance.*``).
+"""Vehicle service history endpoint (``/maintenance?s=App.AppMaintenance.getInfoFromOthers``).
 
-Endpoints:
-  - ``/maintenance?s=App.AppMaintenance.getInfoFromOthers`` (service history list)
-  - ``/maintenance?s=App.AppMaintenance.getRecInfo``        (next recommended service)
+``App.AppMaintenance.getRecInfo`` (next recommended service) is left out on
+purpose: it returns empty fields on every server tested and hangs ~60 s
+before a 504 on the MEA cluster. See jkaberg/pyBYD#114.
 """
 
 from __future__ import annotations
@@ -13,15 +13,14 @@ from pybyd._api._common import ENDPOINT_NOT_SUPPORTED_CODES, build_inner_base, p
 from pybyd._transport import Transport
 from pybyd.config import BydConfig
 from pybyd.exceptions import BydApiError
-from pybyd.models.maintenance import (
-    MaintenanceHistory,
-    MaintenanceRecommendation,
-    MaintenanceRecord,
-)
+from pybyd.models.maintenance import MaintenanceHistory, MaintenanceRecord
 from pybyd.session import Session
 
 MAINTENANCE_HISTORY_ENDPOINT = "/maintenance?s=App.AppMaintenance.getInfoFromOthers"
-MAINTENANCE_REC_ENDPOINT = "/maintenance?s=App.AppMaintenance.getRecInfo"
+
+# owner email and workshop contact/location, kept out of ``raw`` so it
+# doesn't end up in logs or diagnostics dumps
+_PERSONAL_KEYS = frozenset({"customer_email", "shop_address", "shop_phone", "latitude", "longitude"})
 
 
 def _unwrap_maintenance_data(decoded: Any, *, endpoint: str) -> dict[str, Any]:
@@ -35,9 +34,11 @@ def _unwrap_maintenance_data(decoded: Any, *, endpoint: str) -> dict[str, Any]:
             endpoint=endpoint,
         )
     data = decoded.get("data")
-    if isinstance(data, dict):
-        return data
-    return decoded
+    return data if isinstance(data, dict) else decoded
+
+
+def _scrub(item: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in item.items() if k not in _PERSONAL_KEYS}
 
 
 async def fetch_maintenance_history(
@@ -46,7 +47,7 @@ async def fetch_maintenance_history(
     transport: Transport,
     vin: str,
 ) -> MaintenanceHistory:
-    """Fetch past maintenance records for *vin*."""
+    """Fetch past workshop visits for *vin*."""
     inner = build_inner_base(config, vin=vin)
     decoded = await post_token_json(
         endpoint=MAINTENANCE_HISTORY_ENDPOINT,
@@ -59,34 +60,6 @@ async def fetch_maintenance_history(
     )
     data = _unwrap_maintenance_data(decoded, endpoint=MAINTENANCE_HISTORY_ENDPOINT)
     raw_list = data.get("list")
-    records = (
-        [
-            MaintenanceRecord.model_validate({"vin": vin, **item, "raw": item})
-            for item in raw_list
-            if isinstance(item, dict)
-        ]
-        if isinstance(raw_list, list)
-        else []
-    )
-    return MaintenanceHistory(vin=vin, records=records, raw=data)
-
-
-async def fetch_maintenance_recommendation(
-    config: BydConfig,
-    session: Session,
-    transport: Transport,
-    vin: str,
-) -> MaintenanceRecommendation:
-    """Fetch next recommended maintenance date/mileage for *vin*."""
-    inner = build_inner_base(config, vin=vin)
-    decoded = await post_token_json(
-        endpoint=MAINTENANCE_REC_ENDPOINT,
-        config=config,
-        session=session,
-        transport=transport,
-        inner=inner,
-        vin=vin,
-        not_supported_codes=ENDPOINT_NOT_SUPPORTED_CODES,
-    )
-    data = _unwrap_maintenance_data(decoded, endpoint=MAINTENANCE_REC_ENDPOINT)
-    return MaintenanceRecommendation.model_validate({"vin": vin, **data, "raw": data})
+    items = [_scrub(item) for item in raw_list if isinstance(item, dict)] if isinstance(raw_list, list) else []
+    records = [MaintenanceRecord.model_validate({**item, "vin": vin, "raw": item}) for item in items]
+    return MaintenanceHistory(vin=vin, records=records, raw={**data, "list": items})

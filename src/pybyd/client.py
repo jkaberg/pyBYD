@@ -79,7 +79,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
-from pybyd.models.maintenance import MaintenanceHistory, MaintenanceRecommendation
+from pybyd.models.maintenance import MaintenanceHistory
 from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
@@ -2142,14 +2142,6 @@ class BydClient:
         """Fetch OTA firmware version, release notes, and night auto-upgrade settings."""
         return await self._authed_call(_ota_api.fetch_ota_version, vin, probe_busy_session=True)
 
-    async def get_maintenance_history(self, vin: str) -> MaintenanceHistory:
-        """Fetch vehicle maintenance/service history."""
-        return await self._authed_call(_maintenance_api.fetch_maintenance_history, vin)
-
-    async def get_maintenance_recommendation(self, vin: str) -> MaintenanceRecommendation:
-        """Fetch next recommended maintenance date and mileage."""
-        return await self._authed_call(_maintenance_api.fetch_maintenance_recommendation, vin)
-
     async def set_ota_auto_upgrade(
         self,
         vin: str,
@@ -2178,6 +2170,10 @@ class BydClient:
             auto_upgrade_time=auto_upgrade_time,
             command_pwd=resolved_pwd,
         )
+
+    async def get_maintenance_history(self, vin: str) -> MaintenanceHistory:
+        """Fetch past workshop visits (service history)."""
+        return await self._authed_call(_maintenance_api.fetch_maintenance_history, vin, probe_busy_session=True)
 
     async def get_standby_plans(self, vin: str) -> StandbyPlanList:
         """Fetch the preconditioning plans app 3.6.0 schedules climate with."""
