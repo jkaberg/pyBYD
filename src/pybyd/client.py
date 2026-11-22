@@ -21,6 +21,7 @@ from pybyd._api import energy as _energy_api
 from pybyd._api import gps as _gps_api
 from pybyd._api import hvac as _hvac_api
 from pybyd._api import latest_config as _latest_config_api
+from pybyd._api import maintenance as _maintenance_api
 from pybyd._api import message_center as _message_center_api
 from pybyd._api import ota as _ota_api
 from pybyd._api import push_notifications as _push_api
@@ -78,6 +79,7 @@ from pybyd.models.energy import EnergyConsumption
 from pybyd.models.gps import GpsInfo
 from pybyd.models.hvac import HvacStatus
 from pybyd.models.latest_config import VehicleCapabilities, VehicleLatestConfig
+from pybyd.models.maintenance import MaintenanceHistory, MaintenanceRecommendation
 from pybyd.models.message_center import NotificationCategory, VehicleMsgItemInfo
 from pybyd.models.ota import OtaUpgradeInfo
 from pybyd.models.push_notification import PushNotificationState
@@ -2139,6 +2141,14 @@ class BydClient:
     async def get_ota_version(self, vin: str) -> OtaUpgradeInfo:
         """Fetch OTA firmware version, release notes, and night auto-upgrade settings."""
         return await self._authed_call(_ota_api.fetch_ota_version, vin, probe_busy_session=True)
+
+    async def get_maintenance_history(self, vin: str) -> MaintenanceHistory:
+        """Fetch vehicle maintenance/service history."""
+        return await self._authed_call(_maintenance_api.fetch_maintenance_history, vin)
+
+    async def get_maintenance_recommendation(self, vin: str) -> MaintenanceRecommendation:
+        """Fetch next recommended maintenance date and mileage."""
+        return await self._authed_call(_maintenance_api.fetch_maintenance_recommendation, vin)
 
     async def set_ota_auto_upgrade(
         self,
