@@ -50,6 +50,7 @@ from pybyd.exceptions import (
     BydError,
     BydRemoteControlError,
     BydServerTimeError,
+    BydServiceBusyError,
     BydSessionExpiredError,
     BydTokenRefreshError,
 )
@@ -175,6 +176,9 @@ class BydClient:
         # CONNACK-refusal recovery state (see _on_mqtt_connack_refused).
         self._mqtt_recovery_attempts: int = 0
         self._mqtt_recovery_last_at: float = 0.0
+        # Rate-limit state for MEA 1008 dead-session probe / recovery.
+        self._busy_probe_last_at: float | None = None
+        self._busy_reauth_last_at: float | None = None
         self._on_vehicle_info = on_vehicle_info
         self._on_mqtt_event_cb = on_mqtt_event
         self._on_command_ack_cb = on_command_ack
@@ -438,6 +442,15 @@ class BydClient:
             }
         )
 
+    # MEA single-session enforcement (issue #104): vehicle endpoints answer
+    # code=1008 for invalidated sessions while account endpoints still report
+    # session expiry. On read-only vehicle calls, probe getAllListByUserId to
+    # distinguish a dead session from genuine backend busyness, rate-limited so
+    # busy bursts don't spam probes and an active phone-app session doesn't
+    # trigger a login ping-pong loop.
+    _BUSY_PROBE_COOLDOWN_S: float = 60.0
+    _BUSY_REAUTH_COOLDOWN_S: float = 600.0
+
     async def _refresh_or_relogin(self) -> None:
         """Refresh tokens via ``/app/token/refresh`` when available, else re-login."""
         session = self._session
@@ -458,8 +471,100 @@ class BydClient:
         self.invalidate_session()
         await self.ensure_session()
 
-    async def _call_with_reauth(self, fn: Callable[[], Awaitable[T]]) -> T:
-        """Run an API call, retrying once on session expiry, token refresh, or clock drift."""
+    async def _recover_busy_session(self, exc: BydServiceBusyError) -> bool:
+        """Probe whether a ``1008`` busy error actually indicates an invalidated session.
+
+        Returns ``True`` when the lightweight account probe confirms the
+        session is expired/refreshable and recovery succeeded so the caller can
+        retry once; returns ``False`` in all other cases so the original
+        :class:`BydServiceBusyError` is surfaced unchanged.
+        """
+        if exc.code != "1008":
+            return False
+
+        session = self._session
+        transport = self._transport
+        if session is None or transport is None:
+            return False
+
+        now = time.monotonic()
+        if self._busy_reauth_last_at is not None and now - self._busy_reauth_last_at < self._BUSY_REAUTH_COOLDOWN_S:
+            _logger.debug(
+                "Skipping 1008 session probe for %s (re-auth cooldown active)",
+                exc.endpoint,
+            )
+            return False
+        if self._busy_probe_last_at is not None and now - self._busy_probe_last_at < self._BUSY_PROBE_COOLDOWN_S:
+            _logger.debug(
+                "Skipping 1008 session probe for %s (probe cooldown active)",
+                exc.endpoint,
+            )
+            return False
+
+        self._busy_probe_last_at = now
+        try:
+            await _vehicle_api.fetch_vehicle_list(self._config, session, transport)
+        except BydTokenRefreshError as probe_exc:
+            if self._session is not session and self._session is not None and not self._session.is_expired:
+                _logger.debug("Session refreshed concurrently during 1008 probe; retrying %s", exc.endpoint)
+                return True
+            self._busy_reauth_last_at = time.monotonic()
+            _logger.info(
+                "1008 on %s reflects refreshable session (probe code=%s); refreshing session",
+                exc.endpoint,
+                probe_exc.code,
+            )
+            try:
+                await self._refresh_or_relogin()
+            except Exception:
+                _logger.debug("Session refresh after 1008 probe failed", exc_info=True)
+                return False
+            return True
+        except BydSessionExpiredError as probe_exc:
+            if self._session is not session and self._session is not None and not self._session.is_expired:
+                _logger.debug("Session re-authenticated concurrently during 1008 probe; retrying %s", exc.endpoint)
+                return True
+            self._busy_reauth_last_at = time.monotonic()
+            _logger.info(
+                "1008 on %s reflects invalidated session (probe code=%s); re-authenticating",
+                exc.endpoint,
+                probe_exc.code,
+            )
+            try:
+                self.invalidate_session()
+                await self.ensure_session()
+            except Exception:
+                _logger.debug("Re-authentication after 1008 probe failed", exc_info=True)
+                return False
+            return True
+        except Exception as probe_exc:
+            _logger.debug(
+                "1008 session probe for %s failed (%s); keeping original BydServiceBusyError",
+                exc.endpoint,
+                type(probe_exc).__name__,
+                exc_info=True,
+            )
+            return False
+
+        _logger.debug(
+            "1008 session probe for %s succeeded — session is valid; keeping original BydServiceBusyError",
+            exc.endpoint,
+        )
+        return False
+
+    async def _call_with_reauth(
+        self,
+        fn: Callable[[], Awaitable[T]],
+        *,
+        probe_busy_session: bool = False,
+    ) -> T:
+        """Run an API call, retrying once on session expiry, token refresh, or clock drift.
+
+        When *probe_busy_session* is ``True`` (read-only vehicle endpoints only),
+        a ``BydServiceBusyError`` (code ``1008``) triggers a rate-limited probe
+        against ``/app/account/getAllListByUserId`` to distinguish genuine cloud
+        busyness from an invalidated session.
+        """
         try:
             return await fn()
         except BydTokenRefreshError:
@@ -472,11 +577,16 @@ class BydClient:
             self.invalidate_session()
             await self.ensure_session()
             return await fn()
+        except BydServiceBusyError as exc:
+            if probe_busy_session and await self._recover_busy_session(exc):
+                return await fn()
+            raise
 
     async def _authed_call(
         self,
         fn: Callable[..., Awaitable[T]],
         *args: Any,
+        probe_busy_session: bool = False,
         **kwargs: Any,
     ) -> T:
         """Run *fn(config, session, transport, \\*args, \\*\\*kwargs)* with auto re-auth.
@@ -491,7 +601,7 @@ class BydClient:
             transport = self._require_transport()
             return await fn(self._config, session, transport, *args, **kwargs)
 
-        return await self._call_with_reauth(_call)
+        return await self._call_with_reauth(_call, probe_busy_session=probe_busy_session)
 
     # ------------------------------------------------------------------
     # MQTT
@@ -1166,7 +1276,12 @@ class BydClient:
                 code="not_shared_vehicle",
                 endpoint="/vehicle/empower/query/empowerDetailByVin",
             )
-        return await self._authed_call(_vehicle_api.fetch_empower_detail_by_vin, vin, empower_id=resolved_id)
+        return await self._authed_call(
+            _vehicle_api.fetch_empower_detail_by_vin,
+            vin,
+            probe_busy_session=True,
+            empower_id=resolved_id,
+        )
 
     async def get_car(
         self,
@@ -1233,7 +1348,7 @@ class BydClient:
 
     async def get_latest_configs(self, vins: list[str]) -> dict[str, VehicleLatestConfig]:
         """Fetch raw latest-config payload for one or more VINs."""
-        return await self._authed_call(_latest_config_api.fetch_latest_config, vins)
+        return await self._authed_call(_latest_config_api.fetch_latest_config, vins, probe_busy_session=True)
 
     async def get_latest_config(self, vin: str) -> VehicleLatestConfig:
         """Fetch raw latest-config payload for a single VIN."""
@@ -1308,7 +1423,7 @@ class BydClient:
                 validate_context={"energy_type": energy_type},
             )
 
-        return await self._call_with_reauth(_call)
+        return await self._call_with_reauth(_call, probe_busy_session=True)
 
     async def get_gps_info(
         self,
@@ -1348,15 +1463,15 @@ class BydClient:
                 signal_retries=signal_retries,
             )
 
-        return await self._call_with_reauth(_call)
+        return await self._call_with_reauth(_call, probe_busy_session=True)
 
     async def get_hvac_status(self, vin: str) -> HvacStatus:
         """Fetch HVAC / climate status."""
-        return await self._authed_call(_hvac_api.fetch_hvac_status, vin)
+        return await self._authed_call(_hvac_api.fetch_hvac_status, vin, probe_busy_session=True)
 
     async def get_charging_status(self, vin: str) -> ChargingStatus:
         """Fetch charging status."""
-        return await self._authed_call(_charging_api.fetch_charging_status, vin)
+        return await self._authed_call(_charging_api.fetch_charging_status, vin, probe_busy_session=True)
 
     async def get_charging_schedule(self, vin: str) -> SmartChargingSchedule:
         """Fetch the configured smart-charging schedule.
@@ -1365,7 +1480,7 @@ class BydClient:
         ``smartChargeDto`` / ``smartJourneyDto`` blocks into a
         :class:`SmartChargingSchedule`.
         """
-        return await self._authed_call(_smart_api.fetch_charging_schedule, vin)
+        return await self._authed_call(_smart_api.fetch_charging_schedule, vin, probe_busy_session=True)
 
     async def get_charging_homepage(
         self,
@@ -1382,7 +1497,7 @@ class BydClient:
         — this combined call exists alongside, not in place of, the
         push path.
         """
-        raw = await self._authed_call(_charging_api.fetch_charging_homepage, vin)
+        raw = await self._authed_call(_charging_api.fetch_charging_homepage, vin, probe_busy_session=True)
         status = ChargingStatus.model_validate(raw)
         schedule = SmartChargingSchedule.model_validate({"vin": vin, **raw})
         return status, schedule
@@ -1398,6 +1513,7 @@ class BydClient:
         return await self._authed_call(
             _smart_api.fetch_ac_current_limit,
             vin,
+            probe_busy_session=True,
             energy_type=resolved_energy_type,
         )
 
@@ -1415,13 +1531,14 @@ class BydClient:
         return await self._authed_call(
             _energy_api.fetch_energy_consumption,
             vin,
+            probe_busy_session=True,
             power_type=power_type,
             auto_model_name=auto_model_name,
         )
 
     async def get_push_state(self, vin: str) -> PushNotificationState:
         """Fetch push notification state."""
-        return await self._authed_call(_push_api.fetch_push_state, vin)
+        return await self._authed_call(_push_api.fetch_push_state, vin, probe_busy_session=True)
 
     async def set_push_state(self, vin: str, *, enable: bool, push_type: int = 701) -> CommandAck:
         """Enable/disable a per-type push notification switch.
@@ -1962,11 +2079,11 @@ class BydClient:
         booking is set, so an empty ``bookings`` list means "none reported",
         not a guaranteed "none scheduled".
         """
-        return await self._authed_call(_booking_api.fetch_booking_list, vin)
+        return await self._authed_call(_booking_api.fetch_booking_list, vin, probe_busy_session=True)
 
     async def get_ota_version(self, vin: str) -> OtaUpgradeInfo:
         """Fetch OTA firmware version, release notes, and night auto-upgrade settings."""
-        return await self._authed_call(_ota_api.fetch_ota_version, vin)
+        return await self._authed_call(_ota_api.fetch_ota_version, vin, probe_busy_session=True)
 
     async def set_ota_auto_upgrade(
         self,
@@ -1999,7 +2116,7 @@ class BydClient:
 
     async def get_standby_plans(self, vin: str) -> StandbyPlanList:
         """Fetch the preconditioning plans app 3.6.0 schedules climate with."""
-        return await self._authed_call(_standby_api.fetch_standby_plans, vin)
+        return await self._authed_call(_standby_api.fetch_standby_plans, vin, probe_busy_session=True)
 
     async def save_standby_plan(
         self,
