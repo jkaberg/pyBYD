@@ -23,7 +23,8 @@ __all__ = [
 
 
 class AcSwitch(BydEnum):
-    """A/C compressor switch, separate from the overall ``HvacOverallStatus``."""
+    """A/C button setting (ON = A/C, OFF = fan only), separate from the
+    overall ``HvacOverallStatus``. Remembered while the climate is off."""
 
     UNKNOWN = -1
     OFF = 1
@@ -88,9 +89,9 @@ class HvacStatus(BydBaseModel):
 
     # --- A/C state ---
     ac_switch: AcSwitch | None = None
-    """A/C switch state. On the ATTO 3 EVO it follows :attr:`status`; on a
-    Seal it stays ``ON`` with the climate off, so it looks like the A/C
-    button setting rather than the compressor. See issue #20."""
+    """A/C button setting, not whether the climate runs: on the Seal it
+    stays ``ON`` with the climate off and reads ``OFF`` in fan-only mode
+    (issue #20). Use :attr:`status` / :attr:`air_run_state` for running."""
     status: HvacOverallStatus | None = None
     """Overall HVAC status."""
     air_conditioning_mode: AirConditioningMode | None = None
@@ -169,10 +170,10 @@ class HvacStatus(BydBaseModel):
 
     @property
     def is_compressor_on(self) -> bool | None:
-        """Whether :attr:`ac_switch` reads on, ``None`` when not reported.
+        """Whether the A/C button is on, ``None`` when not reported.
 
-        Not a reliable compressor signal on every model (see
-        :attr:`ac_switch`); :attr:`air_run_state` tracks actual running.
+        This is the setting, kept while the climate is off; pair it with
+        :attr:`is_ac_on` to know if the compressor may actually run.
         """
         if self.ac_switch is None or self.ac_switch == AcSwitch.UNKNOWN:
             return None

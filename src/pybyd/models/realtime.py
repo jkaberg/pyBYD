@@ -796,8 +796,9 @@ class VehicleRealtimeData(BydBaseModel):
     steering_system: int | None = None
     """Steering system warning. 0=normal."""
     ok_light: int | None = None
-    """OK/ready indicator. 0=off, 1=on; tracks :attr:`power_gear`. Not yet
-    known whether it separates ACC from ready-to-drive."""
+    """Cluster OK (ready to drive) light. 0=off, 1=on. Differs from
+    :attr:`power_gear` while plugged in: a car switched on with the cable
+    in reads ``power_gear`` ON but ``ok_light`` 0 (Seal, issue #20)."""
 
     # --- Features (extended) ---
     repair_mode_switch: int | str | None = None
